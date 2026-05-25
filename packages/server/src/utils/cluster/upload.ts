@@ -1,11 +1,12 @@
 import { findAllDeploymentsByApplicationId } from "@dokploy/server/services/deployment";
 import {
 	findRegistryByIdWithCredentials,
-	safeDockerLoginCommand,
 	type Registry,
 } from "@dokploy/server/services/registry";
 import { createRollback } from "@dokploy/server/services/rollbacks";
+import { quote } from "shell-quote";
 import type { ApplicationNested } from "../builders";
+import { createSecretTempFile } from "../process/secrets";
 
 export const uploadImageRemoteCommand = async (
 	application: ApplicationNested,
@@ -118,17 +119,20 @@ const getRegistryCommands = (
 	imageName: string,
 	registryTag: string,
 ): string => {
-	const loginCmd = safeDockerLoginCommand(
-		registry.registryUrl,
-		registry.username,
+	const password = createSecretTempFile(
+		"dokploy-registry-password-",
+		"password",
 		registry.password,
 	);
+
 	return `
 echo "📦 [Enabled Registry] Uploading image to '${registry.registryType}' | '${registryTag}'" ;
-${loginCmd} || {
+if ! docker login ${quote([registry.registryUrl || ""])} -u ${quote([registry.username || ""])} --password-stdin < ${password.quotedPath}; then
+	rm -rf ${password.quotedDir};
 	echo "❌ DockerHub Failed" ;
 	exit 1;
-}
+fi
+rm -rf ${password.quotedDir};
 echo "✅ Registry Login Success" ;
 docker tag ${imageName} ${registryTag} || {
 	echo "❌ Error tagging image" ;
