@@ -28,6 +28,7 @@ export const restoreLibsqlBackup = async (
 
 		emit("Starting restore...");
 		emit(`Restoring libsql from ${backupInput.backupFile}`);
+		emit("Executing restore command...");
 
 		if (serverId) {
 			await execAsyncRemote(serverId, command);
