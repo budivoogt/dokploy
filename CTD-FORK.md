@@ -81,6 +81,26 @@ Before a candidate with encrypted database columns reaches a shared host, run th
 
 Before live rollout, run the synthetic Docker-in-Docker harness in [`ctd-harness/api-preview-queue/`](ctd-harness/api-preview-queue/README.md). It boots the pinned candidate only, exercises Contracko REST request/response shapes, proves preview delete does not resurrect Swarm services, checks queue progress after a failing job, and classifies tracked vs orphan preview services. Evidence is sanitized; teardown requires explicit approval.
 
+## Pinned v0.29.14 candidate (control-plane upgrade)
+
+| Field | Value |
+| --- | --- |
+| Tag | `ghcr.io/budivoogt/dokploy:v0.29.14-ctdd403b82` |
+| Digest | `sha256:ae95f0d7e821fca4fb5f84eb1e5eb0bd61cdaddb4207dba1dcd0e4268b3c74c9` |
+| Revision | `d403b82afb8a71737f3f0b95542679f823514696` |
+| Deploy | `./bin/deploy-ctd.sh v0.29.14-ctdd403b82` (`--update-order stop-first`) |
+
+First candidate boot on a shared host must mount a dedicated encryption Docker secret:
+
+- secret name: `dokploy-encryption-key-v1`
+- file: `/run/secrets/dokploy-encryption-key`
+- env: `ENCRYPTION_KEY_FILE=/run/secrets/dokploy-encryption-key`
+- keep the existing Better Auth secret unchanged
+
+Live freeze, read-only window, canary write (point of no return), recovery, and staged re-enable live in the Contracko repo runbook:
+
+`contracko/contracko` → `docs/guides/dokploy-v02914-live-rollout-runbook.md` (CTD-3515). Execution is CTD-3516 only after the runbook approval box is filled. Never print secret material; verify mounts by name only.
+
 ## When to remove this file
 
 When upstream merges equivalents of all the rows above, delete this file, delete `bin/deploy-ctd.sh`, delete `.github/workflows/ctd-image.yml`, and go back to upstream's image + update flow.
