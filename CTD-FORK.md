@@ -68,6 +68,7 @@ Then rebuild and redeploy via the steps above.
 | GitHub Deployments API | `packages/server/src/services/github-deployment.ts`, `application.ts`, `apps/dokploy/pages/api/deploy/github.ts` | Upstream only writes commit statuses; we want the "This branch is being deployed" panel populated for deploys and redeploys |
 | GitHub App manifest | `apps/dokploy/components/dashboard/settings/git/github/add-github-provider.tsx` | Adds `deployments: write` for the above |
 | Deploy secret hygiene | `packages/server/src/utils/process/secrets.ts`, `execAsync.ts`, provider/build/registry helpers | Keeps deploy tokens and registry passwords out of process arguments and stages temp files on the actual local or SSH execution host |
+| Digest-safe registry mirroring | `packages/server/src/utils/cluster/registry-tag.ts`, `upload.ts` | Keeps Docker-provider sources pinned by `@sha256` while converting only mirror destinations to valid deterministic `:sha256-<digest>` tags |
 | Hung-job recovery | `apps/dokploy/server/queues/deployments-queue.ts` | Adds a bounded watchdog and status reset on top of upstream's per-server in-memory concurrency model |
 | Traefik TLS without a resolver | `packages/server/src/utils/traefik/domain.ts` | Emits `tls: {}` for custom certificate handling without enabling Let's Encrypt |
 | Fork CI and release identity | `.github/workflows/ctd-image.yml`, `Dockerfile`, `bin/deploy-ctd.sh` | Keeps GHCR publication manual and aligns image, package, API, OCI, and runtime release metadata |
@@ -79,7 +80,7 @@ Before a candidate with encrypted database columns reaches a shared host, run th
 
 ## Local API, preview, and queue compatibility rehearsal
 
-Before live rollout, run the synthetic Docker-in-Docker harness in [`ctd-harness/api-preview-queue/`](ctd-harness/api-preview-queue/README.md). It boots the pinned candidate only, exercises Contracko REST request/response shapes, proves preview delete does not resurrect Swarm services, checks queue progress after a failing job, and classifies tracked vs orphan preview services. Evidence is sanitized; teardown requires explicit approval.
+Before live rollout, run the synthetic Docker-in-Docker harness in [`ctd-harness/api-preview-queue/`](ctd-harness/api-preview-queue/README.md). It boots the pinned candidate only, exercises Contracko REST request/response shapes, proves preview delete does not resurrect Swarm services, checks queue progress after a failing job, and classifies tracked vs orphan preview services. Compatibility proof must include a Docker-provider application linked to a stored registry with an `@sha256` source; tag-only fixtures do not exercise digest-safe mirroring. Evidence is sanitized; teardown requires explicit approval.
 
 ## Pinned v0.29.14 candidate (control-plane upgrade)
 
