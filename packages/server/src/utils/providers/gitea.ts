@@ -8,7 +8,7 @@ import {
 import type { InferResultType } from "@dokploy/server/types/with";
 import { TRPCError } from "@trpc/server";
 import { quote } from "shell-quote";
-import { createGitAskPassScript } from "../process/secrets";
+import { createGitCredentialHelper } from "../process/secrets";
 
 export const getErrorCloneRequirements = (entity: {
 	giteaRepository?: string | null;
@@ -175,10 +175,13 @@ export const cloneGiteaRepository = async ({
 		giteaOwner!,
 		giteaRepository!,
 	);
-	const askPass = createGitAskPassScript(giteaProvider.accessToken);
+	const credentialHelper = createGitCredentialHelper(
+		giteaProvider.accessToken,
+		cloneUrl,
+	);
 
 	command += `echo ${quote([`Cloning Repo ${repoClone} to ${outputPath}: ✅`])};`;
-	command += `if ! GIT_ASKPASS=${askPass.quotedPath} GIT_TERMINAL_PROMPT=0 git clone --branch ${quote([String(giteaBranch ?? "")])} --depth 1 ${enableSubmodules ? "--recurse-submodules" : ""} ${quote([String(cloneUrl ?? "")])} ${quote([String(outputPath ?? "")])} --progress; then rm -rf ${askPass.quotedDir}; exit 1; fi; rm -rf ${askPass.quotedDir};`;
+	command += `if ! GIT_ASKPASS= GIT_TERMINAL_PROMPT=0 git -c credential.helper= -c credential.helper=${credentialHelper.quotedPath} clone --branch ${quote([String(giteaBranch ?? "")])} --depth 1 ${enableSubmodules ? "--recurse-submodules" : ""} ${quote([String(cloneUrl ?? "")])} ${quote([String(outputPath ?? "")])} --progress; then rm -rf ${credentialHelper.quotedDir}; exit 1; fi; rm -rf ${credentialHelper.quotedDir};`;
 	return command;
 };
 

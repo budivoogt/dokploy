@@ -12,7 +12,7 @@ import type { InferResultType } from "@dokploy/server/types/with";
 import { TRPCError } from "@trpc/server";
 import { quote } from "shell-quote";
 import type { z } from "zod";
-import { createGitAskPassScript } from "../process/secrets";
+import { createGitCredentialHelper } from "../process/secrets";
 
 export type ApplicationWithBitbucket = InferResultType<
 	"applications",
@@ -128,9 +128,13 @@ export const cloneBitbucketRepository = async ({
 		? "x-bitbucket-api-token-auth"
 		: bitbucket.bitbucketUsername || "";
 	const credential = bitbucket.apiToken || bitbucket.appPassword;
-	const askPass = createGitAskPassScript(credential, username);
+	const credentialHelper = createGitCredentialHelper(
+		credential,
+		cloneUrl,
+		username,
+	);
 	command += `echo ${quote([`Cloning Repo ${repoclone} to ${outputPath}: ✅`])};`;
-	command += `if ! GIT_ASKPASS=${askPass.quotedPath} GIT_TERMINAL_PROMPT=0 git clone --branch ${quote([String(bitbucketBranch ?? "")])} --depth 1 ${enableSubmodules ? "--recurse-submodules" : ""} ${quote([String(cloneUrl ?? "")])} ${quote([String(outputPath ?? "")])} --progress; then rm -rf ${askPass.quotedDir}; exit 1; fi; rm -rf ${askPass.quotedDir};`;
+	command += `if ! GIT_ASKPASS= GIT_TERMINAL_PROMPT=0 git -c credential.helper= -c credential.helper=${credentialHelper.quotedPath} clone --branch ${quote([String(bitbucketBranch ?? "")])} --depth 1 ${enableSubmodules ? "--recurse-submodules" : ""} ${quote([String(cloneUrl ?? "")])} ${quote([String(outputPath ?? "")])} --progress; then rm -rf ${credentialHelper.quotedDir}; exit 1; fi; rm -rf ${credentialHelper.quotedDir};`;
 	return command;
 };
 
