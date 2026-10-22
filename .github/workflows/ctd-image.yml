@@ -54,6 +54,7 @@ jobs:
           echo "  - ${BRANCH_TAG}"
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -69,12 +70,29 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Verify published Node runtime
+        id: runtime
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          node_version="$(docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint node "${IMAGE}@${IMAGE_DIGEST}" --version)"
+          test "${node_version}" = v24.22.1
+          echo "Node runtime: ${node_version}"
+          echo "node_version=${node_version}" >> "$GITHUB_OUTPUT"
+
       - name: Summary
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          NODE_VERSION: ${{ steps.runtime.outputs.node_version }}
         run: |
           {
             echo "### CTD image pushed"
             echo ""
             echo "**Tag:** \`${{ steps.tags.outputs.tag_label }}\`"
+            echo "**Image:** \`${{ steps.tags.outputs.version_tag }}@${IMAGE_DIGEST}\`"
+            echo "**Revision:** \`${{ github.sha }}\`"
+            echo "**Node:** \`${NODE_VERSION}\`"
             echo ""
             echo "Deploy with:"
             echo ""

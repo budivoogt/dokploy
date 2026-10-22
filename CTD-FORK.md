@@ -39,6 +39,12 @@ First-time image pushes land as **private** GHCR packages. Either:
 
 The deploy script already passes `--with-registry-auth`, so either path works.
 
+## Node security runtime
+
+The maintained Dockerfiles use `node:24.22.1-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205` for the October 2026 Node security fixes. `.nvmrc` and workspace engine floors select 24.22.1. The development container moves from Bullseye to Bookworm, matching the maintained slim base; the cloud, schedule, and API image paths inherit that same pinned base.
+
+Manual image publication verifies `node --version` in the exact pushed digest without starting Dokploy or connecting it to a database or Docker socket. The workflow summary records the candidate tag, immutable digest, revision, and measured Node version. Publication does not authorize production deployment. This runtime patch keeps the v0.29.14 application and existing fork patches; upgrading to v0.30.8 is a separate decision.
+
 ## Branch conventions
 
 - `canary` tracks upstream; do not commit there directly.
