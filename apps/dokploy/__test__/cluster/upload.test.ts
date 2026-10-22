@@ -1,6 +1,6 @@
 import type { Registry } from "@dokploy/server";
-import { getRegistryTag } from "@dokploy/server";
 import { describe, expect, it } from "vitest";
+import { getRegistryTag } from "../../../../packages/server/src/utils/cluster/registry-tag";
 
 describe("getRegistryTag", () => {
 	// Helper to create a mock registry
@@ -30,6 +30,28 @@ describe("getRegistryTag", () => {
 			const registry = createMockRegistry({ username: "myuser" });
 			const result = getRegistryTag(registry, "nginx:latest");
 			expect(result).toBe("docker.io/myuser/nginx:latest");
+		});
+
+		it("converts an immutable digest into a deterministic mirror tag", () => {
+			const registry = createMockRegistry({ username: "myuser" });
+			const digest = "1".repeat(64);
+			const result = getRegistryTag(
+				registry,
+				`ghcr.io/contracko/contracko@sha256:${digest}`,
+			);
+
+			expect(result).toBe(`docker.io/myuser/contracko:sha256-${digest}`);
+		});
+
+		it("replaces an existing source tag when mirroring a tagged digest", () => {
+			const registry = createMockRegistry({ username: "myuser" });
+			const digest = "2".repeat(64);
+			const result = getRegistryTag(
+				registry,
+				`ghcr.io/contracko/contracko:sha-head@sha256:${digest}`,
+			);
+
+			expect(result).toBe(`docker.io/myuser/contracko:sha256-${digest}`);
 		});
 
 		it("should handle image name with username already present (no duplication)", () => {

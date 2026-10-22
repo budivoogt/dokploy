@@ -47,3 +47,5 @@ yarn-error.log*
 
 .playwright-*
 .credentials
+ctd-harness/encryption-rollback/.state/
+ctd-harness/api-preview-queue/.state/

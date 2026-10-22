@@ -32,6 +32,7 @@ import {
 	updateUser,
 } from "@dokploy/server";
 import { db } from "@dokploy/server/db";
+import { assertDeployGitSourceWriteAccess } from "@dokploy/server/services/git-provider";
 import {
 	addNewEnvironment,
 	addNewProject,
@@ -868,14 +869,13 @@ export const projectRouter = createTRPCRouter({
 			try {
 				await checkProjectAccess(ctx, "create");
 
-				const sourceEnvironment = input.duplicateInSameProject
-					? await findEnvironmentById(input.sourceEnvironmentId)
-					: null;
+				const sourceEnvironment = await findEnvironmentById(
+					input.sourceEnvironmentId,
+				);
 
 				if (
-					input.duplicateInSameProject &&
-					sourceEnvironment?.project.organizationId !==
-						ctx.session.activeOrganizationId
+					sourceEnvironment.project.organizationId !==
+					ctx.session.activeOrganizationId
 				) {
 					throw new TRPCError({
 						code: "UNAUTHORIZED",
@@ -883,12 +883,7 @@ export const projectRouter = createTRPCRouter({
 					});
 				}
 
-				if (
-					input.duplicateInSameProject &&
-					sourceEnvironment &&
-					ctx.user.role !== "owner" &&
-					ctx.user.role !== "admin"
-				) {
+				if (ctx.user.role !== "owner" && ctx.user.role !== "admin") {
 					const { accessedProjects } = await findMemberByUserId(
 						ctx.user.id,
 						ctx.session.activeOrganizationId,
@@ -914,10 +909,33 @@ export const projectRouter = createTRPCRouter({
 
 				if (input.includeServices) {
 					const servicesToDuplicate = input.selectedServices || [];
+					const assertSourceEnvironment = (service: {
+						environmentId: string;
+					}) => {
+						if (service.environmentId !== input.sourceEnvironmentId) {
+							throw new TRPCError({
+								code: "NOT_FOUND",
+								message: "Service not found in source environment",
+							});
+						}
+					};
 
 					const duplicateService = async (id: string, type: string) => {
 						switch (type) {
 							case "application": {
+								const sourceApplication = await findApplicationById(id);
+								if (
+									sourceApplication.environmentId !== input.sourceEnvironmentId
+								) {
+									throw new TRPCError({
+										code: "NOT_FOUND",
+										message: "Application not found in source environment",
+									});
+								}
+								await assertDeployGitSourceWriteAccess(
+									ctx.session,
+									sourceApplication,
+								);
 								const {
 									applicationId,
 									domains,
@@ -930,7 +948,7 @@ export const projectRouter = createTRPCRouter({
 									appName,
 									refreshToken,
 									...application
-								} = await findApplicationById(id);
+								} = sourceApplication;
 								const newAppName = appName.substring(
 									0,
 									appName.lastIndexOf("-"),
@@ -999,6 +1017,17 @@ export const projectRouter = createTRPCRouter({
 								break;
 							}
 							case "compose": {
+								const sourceCompose = await findComposeById(id);
+								if (sourceCompose.environmentId !== input.sourceEnvironmentId) {
+									throw new TRPCError({
+										code: "NOT_FOUND",
+										message: "Compose not found in source environment",
+									});
+								}
+								await assertDeployGitSourceWriteAccess(
+									ctx.session,
+									sourceCompose,
+								);
 								const {
 									composeId,
 									mounts,
@@ -1006,7 +1035,7 @@ export const projectRouter = createTRPCRouter({
 									appName,
 									refreshToken,
 									...compose
-								} = await findComposeById(id);
+								} = sourceCompose;
 
 								const newAppName = appName.substring(
 									0,
@@ -1043,8 +1072,9 @@ export const projectRouter = createTRPCRouter({
 								break;
 							}
 							case "libsql": {
-								const { libsqlId, mounts, appName, ...libsql } =
-									await findLibsqlById(id);
+								const sourceLibsql = await findLibsqlById(id);
+								assertSourceEnvironment(sourceLibsql);
+								const { libsqlId, mounts, appName, ...libsql } = sourceLibsql;
 
 								const newAppName = appName.substring(
 									0,
@@ -1072,8 +1102,10 @@ export const projectRouter = createTRPCRouter({
 								break;
 							}
 							case "mariadb": {
+								const sourceMariadb = await findMariadbById(id);
+								assertSourceEnvironment(sourceMariadb);
 								const { mariadbId, mounts, backups, appName, ...mariadb } =
-									await findMariadbById(id);
+									sourceMariadb;
 
 								const newAppName = appName.substring(
 									0,
@@ -1108,8 +1140,10 @@ export const projectRouter = createTRPCRouter({
 								break;
 							}
 							case "mongo": {
+								const sourceMongo = await findMongoById(id);
+								assertSourceEnvironment(sourceMongo);
 								const { mongoId, mounts, backups, appName, ...mongo } =
-									await findMongoById(id);
+									sourceMongo;
 
 								const newAppName = appName.substring(
 									0,
@@ -1144,8 +1178,10 @@ export const projectRouter = createTRPCRouter({
 								break;
 							}
 							case "mysql": {
+								const sourceMysql = await findMySqlById(id);
+								assertSourceEnvironment(sourceMysql);
 								const { mysqlId, mounts, backups, appName, ...mysql } =
-									await findMySqlById(id);
+									sourceMysql;
 
 								const newAppName = appName.substring(
 									0,
@@ -1180,8 +1216,10 @@ export const projectRouter = createTRPCRouter({
 								break;
 							}
 							case "postgres": {
+								const sourcePostgres = await findPostgresById(id);
+								assertSourceEnvironment(sourcePostgres);
 								const { postgresId, mounts, backups, appName, ...postgres } =
-									await findPostgresById(id);
+									sourcePostgres;
 
 								const newAppName = appName.substring(
 									0,
@@ -1216,8 +1254,9 @@ export const projectRouter = createTRPCRouter({
 								break;
 							}
 							case "redis": {
-								const { redisId, mounts, appName, ...redis } =
-									await findRedisById(id);
+								const sourceRedis = await findRedisById(id);
+								assertSourceEnvironment(sourceRedis);
+								const { redisId, mounts, appName, ...redis } = sourceRedis;
 
 								const newAppName = appName.substring(
 									0,

@@ -3,7 +3,7 @@
   "info": {
     "title": "Dokploy API",
     "description": "Complete API documentation for Dokploy - Deploy applications, manage databases, and orchestrate your infrastructure. This API allows you to programmatically manage all aspects of your Dokploy instance.",
-    "version": "1.0.0",
+    "version": "v0.30.10",
     "contact": {
       "name": "Dokploy Team",
       "url": "https://dokploy.com"

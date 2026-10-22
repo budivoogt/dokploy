@@ -14,6 +14,10 @@ const mocks = vi.hoisted(() => ({
 	shouldDeploy: vi.fn(),
 	createPreviewDeployment: vi.fn(),
 	findPreviewDeploymentByApplicationId: vi.fn(),
+	deactivateGithubDeployments: vi.fn(),
+	findApplicationById: vi.fn(),
+	findPreviewDeploymentsByPullRequestId: vi.fn(),
+	removePreviewDeployment: vi.fn(),
 }));
 
 vi.mock("drizzle-orm", () => ({
@@ -68,12 +72,16 @@ vi.mock("@dokploy/server", () => ({
 	checkUserRepositoryPermissions: vi.fn(),
 	createPreviewDeployment: mocks.createPreviewDeployment,
 	createSecurityBlockedComment: vi.fn(),
+	deactivateGithubDeployments: mocks.deactivateGithubDeployments,
+	findApplicationById: mocks.findApplicationById,
 	findGithubById: vi.fn(),
 	findPreviewDeploymentByApplicationId:
 		mocks.findPreviewDeploymentByApplicationId,
-	findPreviewDeploymentsByPullRequestId: vi.fn(),
+	findPreviewDeploymentsByPullRequestId:
+		mocks.findPreviewDeploymentsByPullRequestId,
 	getBitbucketHeaders: vi.fn(() => ({})),
-	removePreviewDeployment: vi.fn(),
+	removePreviewDeployment: mocks.removePreviewDeployment,
+	updatePreviewDeployment: vi.fn(),
 }));
 
 vi.mock("@octokit/webhooks", () => ({
@@ -160,6 +168,23 @@ const createTagRequest = (tagName: string) => {
 	return req as unknown as NextApiRequest;
 };
 
+const createClosedPullRequest = () =>
+	({
+		headers: {
+			"x-hub-signature-256": "sha256=test-signature",
+			"x-github-event": "pull_request",
+		},
+		body: {
+			action: "closed",
+			installation: { id: 12345 },
+			pull_request: { id: "pr-id" },
+			repository: {
+				name: "dokploy",
+				owner: { login: "agentHits" },
+			},
+		},
+	}) as unknown as NextApiRequest;
+
 describe("GitHub app webhook auto-deploy", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -223,6 +248,29 @@ describe("GitHub app webhook auto-deploy", () => {
 		);
 		expect(res.status).toHaveBeenCalledWith(200);
 		expect(res.json).toHaveBeenCalledWith({ message: "Deployed 1 apps" });
+	});
+
+	it("partitions self-hosted webhook work by the application build server", async () => {
+		mocks.applicationsFindMany.mockResolvedValue([
+			{
+				applicationId: "application-id",
+				serverId: "runtime-server",
+				buildServerId: "build-server",
+				watchPaths: null,
+			},
+		]);
+		const res = createResponse();
+
+		await handler(createPushRequest("main"), res);
+
+		expect(mocks.queueAdd).toHaveBeenCalledWith(
+			"deployments",
+			expect.objectContaining({
+				applicationId: "application-id",
+				serverId: "build-server",
+			}),
+			expect.any(Object),
+		);
 	});
 
 	it("matches compose push events using repository owner login fallback", async () => {
@@ -322,6 +370,62 @@ describe("GitHub app webhook auto-deploy", () => {
 		expect(mocks.queueAdd).not.toHaveBeenCalled();
 		expect(res.status).toHaveBeenCalledWith(200);
 		expect(res.json).toHaveBeenCalledWith({ message: "No apps to deploy" });
+	});
+
+	it("deactivates GitHub deployments before tearing down a closed preview", async () => {
+		mocks.findPreviewDeploymentsByPullRequestId.mockResolvedValue([
+			{
+				applicationId: "application-id",
+				previewDeploymentId: "preview-id",
+				pullRequestNumber: "7",
+			},
+		]);
+		mocks.findApplicationById.mockResolvedValue({
+			githubId: "github-provider-id",
+			owner: "agentHits",
+			repository: "dokploy",
+			name: "app",
+		});
+		const res = createResponse();
+
+		await handler(createClosedPullRequest(), res);
+
+		expect(mocks.deactivateGithubDeployments).toHaveBeenCalledWith({
+			githubId: "github-provider-id",
+			owner: "agentHits",
+			repository: "dokploy",
+			environment: "app-pr-7",
+		});
+		expect(mocks.removePreviewDeployment).toHaveBeenCalledWith("preview-id");
+		expect(
+			mocks.deactivateGithubDeployments.mock.invocationCallOrder[0]!,
+		).toBeLessThan(mocks.removePreviewDeployment.mock.invocationCallOrder[0]!);
+		expect(res.status).toHaveBeenCalledWith(200);
+	});
+
+	it("still tears down a preview when GitHub deactivation fails", async () => {
+		mocks.findPreviewDeploymentsByPullRequestId.mockResolvedValue([
+			{
+				applicationId: "application-id",
+				previewDeploymentId: "preview-id",
+				pullRequestNumber: "7",
+			},
+		]);
+		mocks.findApplicationById.mockResolvedValue({
+			githubId: "github-provider-id",
+			owner: "agentHits",
+			repository: "dokploy",
+			name: "app",
+		});
+		mocks.deactivateGithubDeployments.mockRejectedValue(
+			new Error("GitHub unavailable"),
+		);
+		const res = createResponse();
+
+		await handler(createClosedPullRequest(), res);
+
+		expect(mocks.removePreviewDeployment).toHaveBeenCalledWith("preview-id");
+		expect(res.status).toHaveBeenCalledWith(200);
 	});
 });
 

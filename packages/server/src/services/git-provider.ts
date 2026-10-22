@@ -3,6 +3,10 @@ import { gitProvider, member } from "@dokploy/server/db/schema";
 import { hasValidLicense } from "@dokploy/server/services/proprietary/license-key";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
+import { findBitbucketById } from "./bitbucket";
+import { findGiteaById } from "./gitea";
+import { findGithubById } from "./github";
+import { findGitlabById } from "./gitlab";
 
 export type GitProvider = typeof gitProvider.$inferSelect;
 
@@ -63,14 +67,18 @@ export const canEditDeployGitSource = async (
 		columns: { role: true },
 	});
 
-	if (memberRecord?.role === "owner") return true;
-
 	const provider = await db.query.gitProvider.findFirst({
 		where: eq(gitProvider.gitProviderId, gitProviderId),
-		columns: { userId: true, sharedWithOrganization: true },
+		columns: {
+			organizationId: true,
+			userId: true,
+			sharedWithOrganization: true,
+		},
 	});
 
-	if (!provider) return false;
+	if (!provider || provider.organizationId !== activeOrganizationId)
+		return false;
+	if (memberRecord?.role === "owner") return true;
 
 	return provider.userId === userId || provider.sharedWithOrganization;
 };
@@ -151,9 +159,148 @@ export const assertGitProviderAccess = async (
 	}
 };
 
-// Being allowed to use a shared provider (assertGitProviderAccess) must not
-// imply being allowed to read its raw OAuth tokens / client secrets / private
-// keys. Only the provider's owner or an org owner/admin gets those back.
+type GitProviderReferences = {
+	githubId?: string | null;
+	gitlabId?: string | null;
+	bitbucketId?: string | null;
+	giteaId?: string | null;
+};
+
+/**
+ * Authorizes provider IDs before they are attached to an application or compose.
+ * Callers must run this before persisting any user-controlled provider reference.
+ */
+export const assertGitProviderReferencesAccess = async (
+	session: { userId: string; activeOrganizationId: string },
+	references: GitProviderReferences,
+) => {
+	const lookups = [
+		references.githubId
+			? () => findGithubById(references.githubId as string)
+			: null,
+		references.gitlabId
+			? () => findGitlabById(references.gitlabId as string)
+			: null,
+		references.bitbucketId
+			? () => findBitbucketById(references.bitbucketId as string)
+			: null,
+		references.giteaId
+			? () => findGiteaById(references.giteaId as string)
+			: null,
+	].filter((lookup) => lookup !== null);
+
+	for (const lookup of lookups) {
+		const provider = await lookup();
+		await assertGitProviderAccess(session, provider.gitProvider);
+	}
+};
+
+export const assertGitProviderManageAccess = async (
+	session: { userId: string; activeOrganizationId: string },
+	provider: {
+		gitProviderId: string;
+		organizationId: string;
+		userId: string;
+	},
+) => {
+	if (provider.organizationId !== session.activeOrganizationId) {
+		throw new TRPCError({
+			code: "NOT_FOUND",
+			message: "Git provider not found",
+		});
+	}
+
+	const memberRecord = await db.query.member.findFirst({
+		where: and(
+			eq(member.userId, session.userId),
+			eq(member.organizationId, session.activeOrganizationId),
+		),
+		columns: { role: true },
+	});
+	if (
+		memberRecord?.role === "owner" ||
+		memberRecord?.role === "admin" ||
+		provider.userId === session.userId
+	) {
+		return;
+	}
+
+	throw new TRPCError({
+		code: "FORBIDDEN",
+		message: "You cannot manage this git provider",
+	});
+};
+
+type DeployGitSource = {
+	sourceType?: string | null;
+	github?: { gitProviderId: string } | null;
+	gitlab?: { gitProviderId: string } | null;
+	bitbucket?: { gitProviderId: string } | null;
+	gitea?: { gitProviderId: string } | null;
+};
+
+export const assertDeployGitSourceWriteAccess = async (
+	session: { userId: string; activeOrganizationId: string },
+	deploy: DeployGitSource,
+) => {
+	const gitProviderId =
+		deploy.sourceType === "github"
+			? deploy.github?.gitProviderId
+			: deploy.sourceType === "gitlab"
+				? deploy.gitlab?.gitProviderId
+				: deploy.sourceType === "bitbucket"
+					? deploy.bitbucket?.gitProviderId
+					: deploy.sourceType === "gitea"
+						? deploy.gitea?.gitProviderId
+						: null;
+	if (
+		gitProviderId &&
+		!(await canEditDeployGitSource(gitProviderId, session))
+	) {
+		throw new TRPCError({
+			code: "FORBIDDEN",
+			message: "You cannot modify this deploy's git source",
+		});
+	}
+};
+
+const gitSourceMutationKeys = new Set([
+	"sourceType",
+	"githubId",
+	"repository",
+	"owner",
+	"branch",
+	"buildPath",
+	"gitlabId",
+	"gitlabRepository",
+	"gitlabOwner",
+	"gitlabBranch",
+	"gitlabBuildPath",
+	"gitlabProjectId",
+	"gitlabPathNamespace",
+	"bitbucketId",
+	"bitbucketRepository",
+	"bitbucketRepositorySlug",
+	"bitbucketOwner",
+	"bitbucketBranch",
+	"bitbucketBuildPath",
+	"giteaId",
+	"giteaRepository",
+	"giteaOwner",
+	"giteaBranch",
+	"giteaBuildPath",
+	"customGitUrl",
+	"customGitBranch",
+	"customGitBuildPath",
+	"customGitSSHKeyId",
+	"watchPaths",
+	"triggerType",
+	"enableSubmodules",
+]);
+
+export const hasGitSourceMutation = (input: object) =>
+	Object.keys(input).some((key) => gitSourceMutationKeys.has(key));
+
 export const canViewGitProviderSecrets = async (
 	session: { userId: string; activeOrganizationId: string },
 	provider: { userId: string; organizationId: string },

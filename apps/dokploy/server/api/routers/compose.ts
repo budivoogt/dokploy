@@ -35,7 +35,12 @@ import {
 } from "@dokploy/server";
 import { paths } from "@dokploy/server/constants";
 import { db } from "@dokploy/server/db";
-import { canEditDeployGitSource } from "@dokploy/server/services/git-provider";
+import {
+	assertDeployGitSourceWriteAccess,
+	assertGitProviderReferencesAccess,
+	canEditDeployGitSource,
+	hasGitSourceMutation,
+} from "@dokploy/server/services/git-provider";
 import {
 	addNewService,
 	checkServiceAccess,
@@ -197,6 +202,11 @@ export const composeRouter = createTRPCRouter({
 			await checkServicePermissionAndAccess(ctx, input.composeId, {
 				service: ["create"],
 			});
+			if (hasGitSourceMutation(input)) {
+				const compose = await findComposeById(input.composeId);
+				await assertDeployGitSourceWriteAccess(ctx.session, compose);
+			}
+			await assertGitProviderReferencesAccess(ctx.session, input);
 			const updated = await updateCompose(input.composeId, input);
 			await audit(ctx, {
 				action: "update",
@@ -728,6 +738,8 @@ export const composeRouter = createTRPCRouter({
 			await checkServicePermissionAndAccess(ctx, input.composeId, {
 				service: ["create"],
 			});
+			const composeForDisconnect = await findComposeById(input.composeId);
+			await assertDeployGitSourceWriteAccess(ctx.session, composeForDisconnect);
 
 			await updateCompose(input.composeId, {
 				repository: null,
@@ -764,7 +776,6 @@ export const composeRouter = createTRPCRouter({
 				enableSubmodules: false,
 			});
 
-			const composeForDisconnect = await findComposeById(input.composeId);
 			await audit(ctx, {
 				action: "update",
 				resourceType: "compose",

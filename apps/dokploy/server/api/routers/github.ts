@@ -1,6 +1,7 @@
 import {
 	assertGitProviderAccess,
 	canViewGitProviderSecrets,
+	assertGitProviderManageAccess,
 	findGithubById,
 	getAccessibleGitProviderIds,
 	getGithubBranches,
@@ -106,19 +107,23 @@ export const githubRouter = createTRPCRouter({
 	update: withPermission("gitProviders", "create")
 		.input(apiUpdateGithub)
 		.mutation(async ({ input, ctx }) => {
-			await updateGitProvider(input.gitProviderId, {
+			const github = await findGithubById(input.githubId);
+			await assertGitProviderManageAccess(ctx.session, github.gitProvider);
+			await updateGitProvider(github.gitProviderId, {
 				name: input.name,
-				organizationId: ctx.session.activeOrganizationId,
 			});
 
-			await updateGithub(input.githubId, {
-				...input,
-			});
+			const {
+				githubId: _githubId,
+				gitProviderId: _gitProviderId,
+				...update
+			} = input;
+			await updateGithub(input.githubId, update);
 
 			await audit(ctx, {
 				action: "update",
 				resourceType: "gitProvider",
-				resourceId: input.gitProviderId,
+				resourceId: github.gitProviderId,
 				resourceName: input.name,
 			});
 		}),
