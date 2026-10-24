@@ -1,8 +1,9 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { execAsync } from "@dokploy/server/utils/process/execAsync";
 import {
 	cleanupSecretTempFiles,
-	createGitAskPassScript,
+	createGitCredentialHelper,
 	createSecretTempFile,
 	rewriteSecretTempFilesForRemote,
 	type SecretTempFile,
@@ -41,12 +42,46 @@ describe("secret temp files", () => {
 		});
 	});
 
-	it("creates askpass scripts with executable owner-only permissions", () => {
-		const secret = createGitAskPassScript("provider-token-sentinel");
+	it("creates credential helpers with executable owner-only permissions", () => {
+		const secret = createGitCredentialHelper(
+			"provider-token-sentinel",
+			"https://github.com/team/repo.git",
+		);
 		leftovers.push(secret);
 
 		expect(statSync(secret.dir).mode & 0o777).toBe(0o700);
 		expect(statSync(secret.path).mode & 0o777).toBe(0o700);
+	});
+
+	it("releases credentials only to the configured Git origin", () => {
+		const secret = createGitCredentialHelper(
+			"provider-token-sentinel",
+			"https://github.com/team/repo.git",
+		);
+		leftovers.push(secret);
+		const credentials = execFileSync(secret.path, ["get"], {
+			input: "protocol=https\nhost=github.com\n\n",
+			encoding: "utf8",
+		});
+		expect(credentials).toBe(
+			"username=oauth2\npassword=provider-token-sentinel\n",
+		);
+	});
+
+	it.each([
+		"protocol=https\nhost=attacker.example\n\n",
+		"protocol=https\nhost=github.com.attacker.example\n\n",
+		"protocol=http\nhost=github.com\n\n",
+		"protocol=https\nhost=github.com:8443\n\n",
+	])("refuses a different submodule origin: %s", (input) => {
+		const secret = createGitCredentialHelper(
+			"provider-token-sentinel",
+			"https://github.com/team/repo.git",
+		);
+		leftovers.push(secret);
+		expect(
+			execFileSync(secret.path, ["get"], { input, encoding: "utf8" }),
+		).toBe("");
 	});
 
 	it("cleans local secret files after successful execution", async () => {

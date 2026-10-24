@@ -12,8 +12,8 @@ const readRepoFile = (path: string) =>
 
 describe("CTD candidate metadata", () => {
 	it("identifies the adopted upstream release consistently", () => {
-		expect(packageInfo.version).toBe("v0.29.14");
-		expect(readRepoFile("openapi.json")).toContain('"version": "v0.29.14"');
+		expect(packageInfo.version).toBe("v0.30.10");
+		expect(readRepoFile("openapi.json")).toContain('"version": "v0.30.10"');
 
 		const dockerfile = readRepoFile("Dockerfile");
 		expect(dockerfile).toContain("ARG RELEASE_TAG=latest");
@@ -28,8 +28,12 @@ describe("CTD candidate metadata", () => {
 	it("pins patched runtime tooling without retaining a Docker daemon", () => {
 		const dockerfile = readRepoFile("Dockerfile");
 
-		expect(dockerfile).toContain("FROM node:24.14.1-slim AS base");
-		expect(dockerfile).toContain("FROM node:24.14.1-slim AS dokploy");
+		expect(dockerfile).toContain(
+			"FROM node:24.22.1-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS base",
+		);
+		expect(dockerfile).toContain(
+			"FROM node:24.22.1-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS dokploy",
+		);
 		expect(dockerfile).toContain("apt-get upgrade -y");
 		expect(dockerfile).toContain("get-docker.sh --version 29.7.2");
 		expect(dockerfile).toContain(
@@ -76,7 +80,7 @@ describe("CTD candidate metadata", () => {
 
 		const result = spawnSync(
 			"bash",
-			[join(repoRoot, "bin/deploy-ctd.sh"), "v0.29.14-ctdabcdef0"],
+			[join(repoRoot, "bin/deploy-ctd.sh"), "v0.30.10-ctdabcdef0"],
 			{
 				encoding: "utf8",
 				env: {
@@ -89,8 +93,8 @@ describe("CTD candidate metadata", () => {
 
 		expect(result.status).toBe(0);
 		const calls = readFileSync(sshLog, "utf8");
-		expect(calls).toContain("ghcr.io/budivoogt/dokploy:v0.29.14-ctdabcdef0");
-		expect(calls).toContain("--env-add RELEASE_TAG=v0.29.14-ctdabcdef0");
+		expect(calls).toContain("ghcr.io/budivoogt/dokploy:v0.30.10-ctdabcdef0");
+		expect(calls).toContain("--env-add RELEASE_TAG=v0.30.10-ctdabcdef0");
 		expect(calls).toContain("--update-order stop-first");
 	});
 
@@ -108,7 +112,7 @@ describe("CTD candidate metadata", () => {
 	it("rejects SSH option injection in target overrides", () => {
 		const result = spawnSync(
 			"bash",
-			[join(repoRoot, "bin/deploy-ctd.sh"), "v0.29.14-ctdabcdef0"],
+			[join(repoRoot, "bin/deploy-ctd.sh"), "v0.30.10-ctdabcdef0"],
 			{
 				encoding: "utf8",
 				env: { ...process.env, CTD_DOKPLOY_HOST: "-V" },

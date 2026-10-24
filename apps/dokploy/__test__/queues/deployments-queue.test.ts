@@ -102,4 +102,21 @@ describe("deployment queue watchdog", () => {
 		expect(mocks.deployPreviewApplication).not.toHaveBeenCalled();
 		expect(mocks.updatePreviewDeployment).not.toHaveBeenCalled();
 	});
+
+	it("preserves fresh-volume requests when processing compose jobs", async () => {
+		const data: DeploymentJob = {
+			composeId: "compose-1",
+			titleLog: "Fresh deployment",
+			descriptionLog: "test",
+			type: "deploy",
+			applicationType: "compose",
+			freshVolumes: true,
+		};
+
+		await processDeploymentJob(createJob(data));
+
+		expect(mocks.deployCompose).toHaveBeenCalledWith(
+			expect.objectContaining({ composeId: "compose-1", freshVolumes: true }),
+		);
+	});
 });

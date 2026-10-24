@@ -89,12 +89,14 @@ const runDeploymentJob = async (job: InMemoryJob) => {
 		if (job.data.type === "deploy") {
 			await deployCompose({
 				composeId: job.data.composeId,
+				freshVolumes: job.data.freshVolumes,
 				titleLog: job.data.titleLog,
 				descriptionLog: job.data.descriptionLog,
 			});
 		} else if (job.data.type === "redeploy") {
 			await rebuildCompose({
 				composeId: job.data.composeId,
+				freshVolumes: job.data.freshVolumes,
 				titleLog: job.data.titleLog,
 				descriptionLog: job.data.descriptionLog,
 			});

@@ -52,7 +52,7 @@ const expectCredentialSafeClone = (command: string, cloneUrl: string) => {
 	expect(command).toContain(cloneUrl);
 	expect(command).not.toContain("gh-token");
 	expect(command).not.toContain("oauth2:");
-	expect(command).toContain("GIT_ASKPASS=");
+	expect(command).toContain("-c credential.helper=");
 	expect(command).toContain("GIT_TERMINAL_PROMPT=0");
 };
 

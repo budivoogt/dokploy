@@ -14,7 +14,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  regression:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.1
+      - run: corepack enable && corepack prepare pnpm@10.22.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - name: Retained fork and upstream security regressions
+        working-directory: apps/dokploy
+        run: >-
+          pnpm test run
+          __test__/cluster/upload.test.ts
+          __test__/deploy/github-webhook-handler.test.ts
+          __test__/deploy/docker-build-injection.test.ts
+          __test__/deploy/secret-redaction.test.ts
+          __test__/deploy/secret-temp-files.test.ts
+          __test__/git-provider/github-deployment.test.ts
+          __test__/git-provider/provider-secret-argv.test.ts
+          __test__/git-provider/github-clone-host.test.ts
+          __test__/git-provider/git-provider-access.test.ts
+          __test__/git-provider/git-provider-idor.test.ts
+          __test__/queues/deployments-queue.test.ts
+          __test__/queues/in-memory-queue.test.ts
+          __test__/traefik/traefik.test.ts
+          __test__/auth/scim-security.test.ts
+          __test__/drop/drop.test.ts
+
   build:
+    needs: regression
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -94,9 +126,5 @@ jobs:
             echo "**Revision:** \`${{ github.sha }}\`"
             echo "**Node:** \`${NODE_VERSION}\`"
             echo ""
-            echo "Deploy with:"
-            echo ""
-            echo '```'
-            echo "./bin/deploy-ctd.sh ${{ steps.tags.outputs.tag_label }}"
-            echo '```'
+            echo "Publication only. The host owner performs any authorized deployment."
           } >> "$GITHUB_STEP_SUMMARY"

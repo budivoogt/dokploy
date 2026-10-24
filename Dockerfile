@@ -41,7 +41,7 @@ LABEL org.opencontainers.image.source="https://github.com/budivoogt/dokploy" \
   org.opencontainers.image.version="${RELEASE_TAG}" \
   org.opencontainers.image.revision="${VCS_REF}"
 
-RUN apt-get update && apt-get upgrade -y && apt-get install -y curl unzip zip apache2-utils iproute2 rsync git-lfs && git lfs install && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get upgrade -y && apt-get install -y tini curl unzip zip apache2-utils iproute2 rsync git-lfs && git lfs install && rm -rf /var/lib/apt/lists/*
 
 # Copy only the necessary files
 COPY --from=build /prod/dokploy/.next ./.next
@@ -77,7 +77,7 @@ ARG RAILPACK_VERSION=0.35.0
 RUN curl -sSL https://railpack.com/install.sh | bash
 
 # Install buildpacks
-COPY --from=buildpacksio/pack:0.40.9 /usr/local/bin/pack /usr/local/bin/pack
+COPY --from=buildpacksio/pack:0.40.9@sha256:4aec804c59165df9392e784d19a64d773b7bf886e020ef07b187a0f52bef64bf /usr/local/bin/pack /usr/local/bin/pack
 
 # The process starts with node directly. Remove package-manager tooling and caches
 # from the runtime image so build-only dependencies cannot become scan findings.
@@ -88,6 +88,9 @@ EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=5 \
   CMD curl -fs http://localhost:3000/api/trpc/settings.health || exit 1
+
+# tini reaps HEALTHCHECK child processes that Node (as PID 1) leaves defunct.
+ENTRYPOINT ["/usr/bin/tini", "--"]
 
 # Ejecutar node directamente: pnpm como wrapper queda residente (~100MB RSS)
   CMD ["sh", "-c", "node -r dotenv/config dist/wait-for-postgres.mjs && node -r dotenv/config dist/migration.mjs && exec node -r dotenv/config dist/server.mjs"]

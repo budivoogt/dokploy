@@ -515,10 +515,6 @@ export default async function handler(
 					if (!hasLabel) continue;
 				}
 
-				const previewLimit = app?.previewLimit || 0;
-				if (app?.previewDeployments?.length > previewLimit) {
-					continue;
-				}
 				const previewDeploymentResult =
 					await findPreviewDeploymentByApplicationId(app.applicationId, prId);
 				let createdPreviewDeploymentId = "";
@@ -528,6 +524,9 @@ export default async function handler(
 
 				try {
 					if (!previewDeploymentResult && shouldCreateDeployment) {
+						const previewLimit = app?.previewLimit ?? 3;
+						if ((app?.previewDeployments?.length ?? 0) >= previewLimit)
+							continue;
 						const previewDeployment = await createPreviewDeployment({
 							applicationId: app.applicationId as string,
 							branch: prBranch,

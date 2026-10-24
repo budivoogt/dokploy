@@ -46,20 +46,37 @@ export const createSecretTempFile = (
 	return secret;
 };
 
-export const createGitAskPassScript = (
+export const createGitCredentialHelper = (
 	token: string | null | undefined,
+	cloneUrl: string,
 	username = "oauth2",
 ) => {
+	const origin = new URL(cloneUrl);
+	if (!["https:", "http:"].includes(origin.protocol)) {
+		throw new Error("Unsupported Git credential protocol");
+	}
+	if (/[\r\n\0]/.test(username) || /[\r\n\0]/.test(token || "")) {
+		throw new Error("Invalid Git credential format");
+	}
 	const quotedToken = shellSingleQuote(token || "");
 	const quotedUsername = shellSingleQuote(username);
 	return createSecretTempFile(
-		"dokploy-git-askpass-",
-		"askpass.sh",
+		"dokploy-git-credentials-",
+		"credentials.sh",
 		`#!/bin/sh
-case "$1" in
-	*Username*) printf '%s\\n' ${quotedUsername} ;;
-	*) printf '%s\\n' ${quotedToken} ;;
-esac
+[ "$1" = get ] || exit 0
+protocol=
+host=
+while IFS='=' read -r name value; do
+	[ -n "$name" ] || break
+	case "$name" in
+		protocol) protocol="$value" ;;
+		host) host="$value" ;;
+	esac
+done
+[ "$protocol" = ${shellSingleQuote(origin.protocol.slice(0, -1))} ] || exit 0
+[ "$host" = ${shellSingleQuote(origin.host)} ] || exit 0
+printf 'username=%s\\npassword=%s\\n' ${quotedUsername} ${quotedToken}
 `,
 		0o700,
 	);
