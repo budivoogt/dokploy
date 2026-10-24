@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM node:24.14.1-slim AS base
+FROM node:24.22.1-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
@@ -27,7 +27,7 @@ RUN cp -R /usr/src/app/apps/dokploy/dist /prod/dokploy/dist
 
 # Runtime does not need pnpm, Corepack, or npm; start from the clean Node image
 # instead of the package-manager-enabled build base.
-FROM node:24.14.1-slim AS dokploy
+FROM node:24.22.1-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS dokploy
 WORKDIR /app
 
 ARG RELEASE_TAG=latest
