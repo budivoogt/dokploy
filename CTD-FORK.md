@@ -53,6 +53,18 @@ A v0.29 database requires a recoverable backup before migration. Enum additions 
 
 ## Publication and handoff
 
+### Stable security refresh, 26 October 2026
+
+The latest stable release remains v0.30.10, published 22 October 2026. The fork already contains its exact upstream tree plus the carried patches above, so a second stable merge has no source delta. Keep every functional fork patch. The duplicate Node version edit remains dropped; immutable runtime pins and publication checks remain.
+
+Backport the service and project ownership checks from upstream security commit [b3cd3c506](https://github.com/Dokploy/dokploy/commit/b3cd3c5061b9e4f9a786dc4a048765f79bae2523). [CVE-2026-116068](https://nvd.nist.gov/vuln/detail/CVE-2026-116068) affects upstream through v0.30.10: owners and administrators can pass service permission checks for another organization. The same shared check is used by the port router implicated in [CVE-2026-111331](https://nvd.nist.gov/vuln/detail/CVE-2026-111331); the missing ownership check is still present in this stable source despite that record naming versions through v0.30.8. The backport enforces ownership before role permissions and retains per-member service restrictions. No schema migration is added. Cross-organization denial and same-organization access regressions run in the publication gate.
+
+Carry the related security hunks from the same upstream commit: organization-bound backup and volume-backup destinations at request and execution time, certificate path confinement and server-generated certificate paths, and server-side Compose branch validation. Adapt deployment-log access to resolve backup and preview IDs to their owning service before the new ownership check. Retain the fork's credential files and origin isolation instead of upstream's credential-in-command headers. Notification log-tail changes are outside this security backport. No database migration is added. Hosted regressions cover these boundaries before publication.
+
+Also backport Traefik file path confinement from [1f1acacf5](https://github.com/Dokploy/dokploy/commit/1f1acacf585238f9a8f86f8b2a9ad1cb23834deb) and remote file-editor ownership checks from [136a09d01](https://github.com/Dokploy/dokploy/commit/136a09d0161e46fbab14a1872c7c7149a580ed89). [CVE-2026-82954](https://nvd.nist.gov/vuln/detail/CVE-2026-82954) lists versions through v0.29.7, but the stable write route still passes an unconstrained caller path. Reject absolute and relative escapes and foreign servers before file operations, while preserving the existing SFTP write path. Hosted route tests cover denial and allowed local and remote operations.
+
+The publication workflow scans the exact pushed digest with Trivy v0.76.1. It includes OS and library vulnerabilities at every severity, including unknown and unfixed findings, and retains the complete JSON inventory. Scanner failure fails publication validation; vulnerability findings remain visible for explicit disposition and do not imply deployment approval. Source authorization bugs require the regression gate and advisory review, since package scanners do not establish application authorization safety.
+
 Only explicit dispatch of `.github/workflows/ctd-image.yml` publishes images. Ordinary pushes/PRs never publish or deploy. Hosted regressions must pass before amd64 build/push. OCI/runtime metadata records the source SHA and release tag. Node is measured from the pushed digest with networking disabled.
 
 Candidate tags use `ghcr.io/budivoogt/dokploy:v0.30.10-ctd<sha7>`. Hand off the complete tag@digest and successful workflow URL. The PR and handoff record the final digest, avoiding a source change merely to record its own image identity. Branch tags are discovery aids only.

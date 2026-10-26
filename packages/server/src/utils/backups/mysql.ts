@@ -3,7 +3,7 @@ import {
 	createDeploymentBackup,
 	updateDeploymentStatus,
 } from "@dokploy/server/services/deployment";
-import { findDestinationById } from "@dokploy/server/services/destination";
+import { findDestinationByIdForOrganization } from "@dokploy/server/services/destination";
 import { findEnvironmentById } from "@dokploy/server/services/environment";
 import type { MySql } from "@dokploy/server/services/mysql";
 import { findProjectById } from "@dokploy/server/services/project";
@@ -21,7 +21,10 @@ export const runMySqlBackup = async (mysql: MySql, backup: BackupSchedule) => {
 	const environment = await findEnvironmentById(environmentId);
 	const project = await findProjectById(environment.projectId);
 	const { prefix } = backup;
-	const destination = await findDestinationById(backup.destinationId);
+	const destination = await findDestinationByIdForOrganization(
+		backup.destinationId,
+		project.organizationId,
+	);
 	const backupFileName = `${getBackupTimestamp()}.sql.gz`;
 	const bucketDestination = `${appName}/${normalizeS3Path(prefix)}${backupFileName}`;
 	const deployment = await createDeploymentBackup({
@@ -63,7 +66,7 @@ export const runMySqlBackup = async (mysql: MySql, backup: BackupSchedule) => {
 			projectName: project.name,
 			databaseType: "mysql",
 			type: "error",
-			// @ts-ignore
+			// @ts-expect-error
 			errorMessage: error?.message || "Error message not provided",
 			organizationId: project.organizationId,
 			databaseName: backup.database,

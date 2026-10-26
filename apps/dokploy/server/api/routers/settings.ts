@@ -1,3 +1,4 @@
+import path from "node:path";
 import {
 	CLEANUP_CRON_JOB,
 	checkGPUStatus,
@@ -80,6 +81,23 @@ import {
 	protectedProcedure,
 	publicProcedure,
 } from "../trpc";
+
+const resolveTraefikFilePath = (
+	filePath: string,
+	serverId?: string | null,
+): string => {
+	const { MAIN_TRAEFIK_PATH } = paths(!!serverId);
+	const base = path.resolve(MAIN_TRAEFIK_PATH);
+	const resolved = path.resolve(base, filePath);
+	if (resolved !== base && !resolved.startsWith(`${base}${path.sep}`)) {
+		throw new TRPCError({
+			code: "BAD_REQUEST",
+			message:
+				"Invalid path: file must be inside the Traefik configuration directory",
+		});
+	}
+	return resolved;
+};
 
 export const settingsRouter = createTRPCRouter({
 	getWebServerSettings: protectedProcedure.query(async () => {
@@ -586,6 +604,12 @@ export const settingsRouter = createTRPCRouter({
 		.query(async ({ ctx, input }) => {
 			try {
 				await checkPermission(ctx, { traefikFiles: ["read"] });
+				if (input?.serverId) {
+					const server = await findServerById(input.serverId);
+					if (server.organizationId !== ctx.session.activeOrganizationId) {
+						throw new TRPCError({ code: "UNAUTHORIZED" });
+					}
+				}
 				const { MAIN_TRAEFIK_PATH } = paths(!!input?.serverId);
 				const result = await readDirectory(MAIN_TRAEFIK_PATH, input?.serverId);
 				return result || [];
@@ -598,8 +622,15 @@ export const settingsRouter = createTRPCRouter({
 		.input(apiModifyTraefikConfig)
 		.mutation(async ({ input, ctx }) => {
 			await checkPermission(ctx, { traefikFiles: ["write"] });
+			if (input.serverId) {
+				const server = await findServerById(input.serverId);
+				if (server.organizationId !== ctx.session.activeOrganizationId) {
+					throw new TRPCError({ code: "UNAUTHORIZED" });
+				}
+			}
+			const safePath = resolveTraefikFilePath(input.path, input.serverId);
 			await writeTraefikConfigInPath(
-				input.path,
+				safePath,
 				input.traefikConfig,
 				input?.serverId,
 			);
@@ -624,7 +655,8 @@ export const settingsRouter = createTRPCRouter({
 				}
 			}
 
-			return readConfigInPath(input.path, input.serverId);
+			const safePath = resolveTraefikFilePath(input.path, input.serverId);
+			return readConfigInPath(safePath, input.serverId);
 		}),
 	getIp: protectedProcedure.query(async () => {
 		if (IS_CLOUD) {
