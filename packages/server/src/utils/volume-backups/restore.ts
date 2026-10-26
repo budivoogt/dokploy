@@ -1,12 +1,11 @@
 import path from "node:path";
+import { paths } from "@dokploy/server/constants";
+import { findApplicationById } from "@dokploy/server/services/application";
+import { findComposeById } from "@dokploy/server/services/compose";
+import { findDestinationById } from "@dokploy/server/services/destination";
 import { quote } from "shell-quote";
-import {
-	findApplicationById,
-	findComposeById,
-	findDestinationById,
-	getS3Credentials,
-	paths,
-} from "../..";
+import { getS3Credentials } from "../backups/utils";
+import { assertDeclaredServiceVolume } from "./access";
 
 export const restoreVolume = async (
 	id: string,
@@ -16,6 +15,13 @@ export const restoreVolume = async (
 	serverId: string,
 	serviceType: "application" | "compose",
 ) => {
+	const serviceServerId = await assertDeclaredServiceVolume(
+		serviceType,
+		id,
+		volumeName,
+	);
+	if ((serverId || null) !== (serviceServerId || null))
+		throw new Error("Restore server does not match the service");
 	const destination = await findDestinationById(destinationId);
 	const { VOLUME_BACKUPS_PATH } = paths(!!serverId);
 	const volumeBackupPath = path.join(VOLUME_BACKUPS_PATH, volumeName);

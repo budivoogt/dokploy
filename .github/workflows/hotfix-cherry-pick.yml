@@ -1,4 +1,7 @@
 name: Hotfix Cherry-Pick
+permissions:
+  contents: read
+  packages: read
 
 on:
   pull_request_target:

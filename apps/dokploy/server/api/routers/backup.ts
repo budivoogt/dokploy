@@ -28,8 +28,14 @@ import {
 	scheduleBackup,
 	updateBackupById,
 } from "@dokploy/server";
-import { findDestinationById } from "@dokploy/server/services/destination";
-import { checkServicePermissionAndAccess } from "@dokploy/server/services/permission";
+import {
+	findDestinationById,
+	findDestinationByIdForOrganization,
+} from "@dokploy/server/services/destination";
+import {
+	checkServicePermissionAndAccess,
+	type PermissionCtx,
+} from "@dokploy/server/services/permission";
 import { runComposeBackup } from "@dokploy/server/utils/backups/compose";
 import {
 	getS3Credentials,
@@ -46,7 +52,6 @@ import {
 	restoreMongoBackup,
 	restoreMySqlBackup,
 	restorePostgresBackup,
-	restoreWebServerBackup,
 } from "@dokploy/server/utils/restore";
 import { TRPCError } from "@trpc/server";
 import { quote } from "shell-quote";
@@ -58,6 +63,7 @@ import {
 } from "@/server/api/trpc";
 import { audit } from "@/server/api/utils/audit";
 import { assertDatabaseBackupLimit } from "@/server/api/utils/plan-limits";
+import { requirePanelOwner } from "@/server/api/utils/resource-access";
 import {
 	apiCreateBackup,
 	apiFindOneBackup,
@@ -79,23 +85,64 @@ interface RcloneFile {
 	};
 }
 
+type BackupTarget = {
+	postgresId?: string | null;
+	mysqlId?: string | null;
+	mariadbId?: string | null;
+	mongoId?: string | null;
+	libsqlId?: string | null;
+	composeId?: string | null;
+	databaseType: string;
+	backupType?: string | null;
+	destinationId: string;
+};
+
+const checkBackupAccess = async (
+	ctx: PermissionCtx,
+	backup: BackupTarget,
+	action: "read" | "create" | "update" | "delete",
+) => {
+	const ids = [
+		backup.postgresId,
+		backup.mysqlId,
+		backup.mariadbId,
+		backup.mongoId,
+		backup.libsqlId,
+		backup.composeId,
+	].filter(Boolean);
+	if (backup.databaseType === "web-server" || ids.length === 0) {
+		await requirePanelOwner(ctx);
+		if (backup.databaseType === "web-server" && ids.length !== 0) {
+			throw new TRPCError({
+				code: "BAD_REQUEST",
+				message: "Invalid backup target",
+			});
+		}
+	} else {
+		const serviceId =
+			backup.backupType === "compose"
+				? backup.composeId
+				: backup[`${backup.databaseType}Id` as keyof BackupTarget];
+		if (ids.length !== 1 || !serviceId || serviceId !== ids[0]) {
+			throw new TRPCError({
+				code: "BAD_REQUEST",
+				message: "Invalid backup target",
+			});
+		}
+		await checkServicePermissionAndAccess(ctx, serviceId, { backup: [action] });
+	}
+	await findDestinationByIdForOrganization(
+		backup.destinationId,
+		ctx.session.activeOrganizationId,
+	);
+};
+
 export const backupRouter = createTRPCRouter({
 	create: protectedProcedure
 		.input(apiCreateBackup)
 		.mutation(async ({ input, ctx }) => {
 			try {
-				const serviceId =
-					input.postgresId ||
-					input.mysqlId ||
-					input.mariadbId ||
-					input.mongoId ||
-					input.libsqlId ||
-					input.composeId;
-				if (serviceId) {
-					await checkServicePermissionAndAccess(ctx, serviceId, {
-						backup: ["create"],
-					});
-				}
+				await checkBackupAccess(ctx, input, "create");
 
 				if (IS_CLOUD) {
 					const dbType = (
@@ -159,6 +206,7 @@ export const backupRouter = createTRPCRouter({
 					resourceId: backup.backupId,
 				});
 			} catch (error) {
+				if (error instanceof TRPCError) throw error;
 				console.error(error);
 				throw new TRPCError({
 					code: "BAD_REQUEST",
@@ -175,18 +223,7 @@ export const backupRouter = createTRPCRouter({
 		.query(async ({ input, ctx }) => {
 			const backup = await findBackupById(input.backupId);
 
-			const serviceId =
-				backup.postgresId ||
-				backup.mysqlId ||
-				backup.mariadbId ||
-				backup.mongoId ||
-				backup.libsqlId ||
-				backup.composeId;
-			if (serviceId) {
-				await checkServicePermissionAndAccess(ctx, serviceId, {
-					backup: ["read"],
-				});
-			}
+			await checkBackupAccess(ctx, backup, "read");
 
 			return backup;
 		}),
@@ -195,18 +232,8 @@ export const backupRouter = createTRPCRouter({
 		.mutation(async ({ input, ctx }) => {
 			try {
 				const existing = await findBackupById(input.backupId);
-				const serviceId =
-					existing.postgresId ||
-					existing.mysqlId ||
-					existing.mariadbId ||
-					existing.mongoId ||
-					existing.libsqlId ||
-					existing.composeId;
-				if (serviceId) {
-					await checkServicePermissionAndAccess(ctx, serviceId, {
-						backup: ["update"],
-					});
-				}
+				await checkBackupAccess(ctx, existing, "update");
+				await checkBackupAccess(ctx, { ...existing, ...input }, "update");
 
 				await updateBackupById(input.backupId, input);
 				const backup = await findBackupById(input.backupId);
@@ -239,6 +266,7 @@ export const backupRouter = createTRPCRouter({
 					resourceId: backup.backupId,
 				});
 			} catch (error) {
+				if (error instanceof TRPCError) throw error;
 				const message =
 					error instanceof Error ? error.message : "Error updating this Backup";
 				throw new TRPCError({
@@ -252,18 +280,7 @@ export const backupRouter = createTRPCRouter({
 		.mutation(async ({ input, ctx }) => {
 			try {
 				const backup = await findBackupById(input.backupId);
-				const serviceId =
-					backup.postgresId ||
-					backup.mysqlId ||
-					backup.mariadbId ||
-					backup.mongoId ||
-					backup.libsqlId ||
-					backup.composeId;
-				if (serviceId) {
-					await checkServicePermissionAndAccess(ctx, serviceId, {
-						backup: ["delete"],
-					});
-				}
+				await checkBackupAccess(ctx, backup, "delete");
 
 				const value = await removeBackupById(input.backupId);
 				if (IS_CLOUD && value) {
@@ -282,6 +299,7 @@ export const backupRouter = createTRPCRouter({
 				});
 				return value;
 			} catch (error) {
+				if (error instanceof TRPCError) throw error;
 				const message =
 					error instanceof Error ? error.message : "Error deleting this Backup";
 				throw new TRPCError({
@@ -295,6 +313,7 @@ export const backupRouter = createTRPCRouter({
 		.mutation(async ({ input, ctx }) => {
 			try {
 				const backup = await findBackupById(input.backupId);
+				await checkBackupAccess(ctx, backup, "create");
 				if (backup.postgresId) {
 					await checkServicePermissionAndAccess(ctx, backup.postgresId, {
 						backup: ["create"],
@@ -326,6 +345,7 @@ export const backupRouter = createTRPCRouter({
 		.mutation(async ({ input, ctx }) => {
 			try {
 				const backup = await findBackupById(input.backupId);
+				await checkBackupAccess(ctx, backup, "create");
 				if (backup.mysqlId) {
 					await checkServicePermissionAndAccess(ctx, backup.mysqlId, {
 						backup: ["create"],
@@ -353,6 +373,7 @@ export const backupRouter = createTRPCRouter({
 		.mutation(async ({ input, ctx }) => {
 			try {
 				const backup = await findBackupById(input.backupId);
+				await checkBackupAccess(ctx, backup, "create");
 				if (backup.mariadbId) {
 					await checkServicePermissionAndAccess(ctx, backup.mariadbId, {
 						backup: ["create"],
@@ -380,6 +401,7 @@ export const backupRouter = createTRPCRouter({
 		.mutation(async ({ input, ctx }) => {
 			try {
 				const backup = await findBackupById(input.backupId);
+				await checkBackupAccess(ctx, backup, "create");
 				if (backup.composeId) {
 					await checkServicePermissionAndAccess(ctx, backup.composeId, {
 						backup: ["create"],
@@ -407,6 +429,7 @@ export const backupRouter = createTRPCRouter({
 		.mutation(async ({ input, ctx }) => {
 			try {
 				const backup = await findBackupById(input.backupId);
+				await checkBackupAccess(ctx, backup, "create");
 				if (backup.mongoId) {
 					await checkServicePermissionAndAccess(ctx, backup.mongoId, {
 						backup: ["create"],
@@ -434,6 +457,7 @@ export const backupRouter = createTRPCRouter({
 		.mutation(async ({ input, ctx }) => {
 			try {
 				const backup = await findBackupById(input.backupId);
+				await checkBackupAccess(ctx, backup, "create");
 				if (backup.libsqlId) {
 					await checkServicePermissionAndAccess(ctx, backup.libsqlId, {
 						backup: ["create"],
@@ -459,7 +483,15 @@ export const backupRouter = createTRPCRouter({
 	manualBackupWebServer: withPermission("backup", "create")
 		.input(apiFindOneBackup)
 		.mutation(async ({ input, ctx }) => {
+			await requirePanelOwner(ctx);
 			const backup = await findBackupById(input.backupId);
+			if (backup.databaseType !== "web-server") {
+				throw new TRPCError({
+					code: "BAD_REQUEST",
+					message: "Invalid backup target",
+				});
+			}
+			await checkBackupAccess(ctx, backup, "create");
 			await runWebServerBackup(backup);
 			await keepLatestNBackups(backup);
 			await audit(ctx, {
@@ -574,12 +606,19 @@ export const backupRouter = createTRPCRouter({
 		})
 		.input(apiRestoreBackup)
 		.subscription(async function* ({ input, ctx, signal }) {
-			if (input.databaseId) {
-				await checkServicePermissionAndAccess(ctx, input.databaseId, {
-					backup: ["restore"],
+			if (input.databaseType === "web-server" || !input.databaseId) {
+				throw new TRPCError({
+					code: "FORBIDDEN",
+					message: "Control-plane restore is disabled through the API",
 				});
 			}
-			const destination = await findDestinationById(input.destinationId);
+			await checkServicePermissionAndAccess(ctx, input.databaseId, {
+				backup: ["restore"],
+			});
+			const destination = await findDestinationByIdForOrganization(
+				input.destinationId,
+				ctx.session.activeOrganizationId,
+			);
 			const queue: string[] = [];
 			let done = false;
 			const onLog = (log: string) => queue.push(log);
@@ -600,8 +639,6 @@ export const backupRouter = createTRPCRouter({
 					} else if (input.databaseType === "libsql") {
 						const libsql = await findLibsqlById(input.databaseId);
 						await restoreLibsqlBackup(libsql, destination, input, onLog);
-					} else if (input.databaseType === "web-server") {
-						await restoreWebServerBackup(destination, input.backupFile, onLog);
 					}
 				} else if (input.backupType === "compose") {
 					const compose = await findComposeById(input.databaseId);

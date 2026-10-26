@@ -1,6 +1,19 @@
 import type { ApplicationNested, Domain, Redirect } from "@dokploy/server";
-import { createRouterConfig } from "@dokploy/server";
+import {
+	createRouterConfig,
+	readConfigInPath,
+	writeTraefikConfigInPath,
+} from "@dokploy/server";
 import { expect, test } from "vitest";
+
+test("remote arbitrary-path file editing fails closed", async () => {
+	await expect(
+		readConfigInPath("/tmp/traefik/config.yml", "server-a"),
+	).rejects.toThrow("disabled");
+	await expect(
+		writeTraefikConfigInPath("/tmp/traefik/config.yml", "http: {}", "server-a"),
+	).rejects.toThrow("disabled");
+});
 
 const baseApp: ApplicationNested = {
 	railpackVersion: "0.15.4",

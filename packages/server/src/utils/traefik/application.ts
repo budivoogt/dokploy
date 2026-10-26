@@ -6,6 +6,10 @@ import type { Domain } from "@dokploy/server/services/domain";
 import { quote } from "shell-quote";
 import { parse, stringify } from "yaml";
 import {
+	readConfinedFile,
+	writeConfinedFile,
+} from "../filesystem/confined-file";
+import {
 	execAsync,
 	execAsyncRemote,
 	writeFileRemote,
@@ -196,21 +200,8 @@ export const readMonitoringConfig = async (readAll = false) => {
 };
 
 export const readConfigInPath = async (pathFile: string, serverId?: string) => {
-	const configPath = path.join(pathFile);
-
-	if (serverId) {
-		const { stdout } = await execAsyncRemote(
-			serverId,
-			`cat ${quote([configPath])}`,
-		);
-		if (!stdout) return null;
-		return stdout;
-	}
-	if (fs.existsSync(configPath)) {
-		const yamlStr = fs.readFileSync(configPath, "utf8");
-		return yamlStr;
-	}
-	return null;
+	if (serverId) throw new Error("Remote Traefik file editing is disabled");
+	return readConfinedFile(paths().MAIN_TRAEFIK_PATH, pathFile);
 };
 
 export const writeConfig = (appName: string, traefikConfig: string) => {
@@ -242,16 +233,8 @@ export const writeTraefikConfigInPath = async (
 	traefikConfig: string,
 	serverId?: string,
 ) => {
-	try {
-		const configPath = path.join(pathFile);
-		if (serverId) {
-			await writeFileRemote(serverId, configPath, traefikConfig);
-		} else {
-			fs.writeFileSync(configPath, traefikConfig, "utf8");
-		}
-	} catch (e) {
-		console.error("Error saving the YAML config file:", e);
-	}
+	if (serverId) throw new Error("Remote Traefik file editing is disabled");
+	await writeConfinedFile(paths().MAIN_TRAEFIK_PATH, pathFile, traefikConfig);
 };
 
 export const writeTraefikConfig = (
