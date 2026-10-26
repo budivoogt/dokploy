@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
 	readDirectory: vi.fn(),
 	readConfigInPath: vi.fn(),
 	writeTraefikConfigInPath: vi.fn(),
+	updateServerById: vi.fn(),
+	reloadDockerResource: vi.fn(),
 }));
 
 vi.mock("@dokploy/server/services/permission", () => ({
@@ -22,6 +24,9 @@ vi.mock("@dokploy/server", () => ({
 
 vi.mock("@dokploy/server/lib/auth", () => ({
 	validateRequest: vi.fn(),
+}));
+vi.mock("@dokploy/server/services/server", () => ({
+	findServerById: mocks.findServerById,
 }));
 
 vi.mock("@/server/api/utils/audit", () => ({
@@ -45,6 +50,10 @@ const caller = settingsRouter.createCaller({
 } as Parameters<typeof settingsRouter.createCaller>[0]);
 
 const filePath = path.join(traefikPath, "dynamic/app.yml");
+const admin = settingsRouter.createCaller({
+	session: { activeOrganizationId: "org-a" },
+	user: { id: "user-1", email: "user@example.com", role: "owner" },
+} as Parameters<typeof settingsRouter.createCaller>[0]);
 
 describe("traefik file endpoints scope remote servers to the active organization", () => {
 	beforeEach(() => {
@@ -55,6 +64,20 @@ describe("traefik file endpoints scope remote servers to the active organization
 		}));
 		mocks.readDirectory.mockResolvedValue([]);
 		mocks.readConfigInPath.mockResolvedValue("http: {}");
+	});
+
+	it("denies foreign-server cleanup updates and admin actions before effects", async () => {
+		await expect(
+			admin.updateDockerCleanup({
+				serverId: "server-b",
+				enableDockerCleanup: true,
+			}),
+		).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+		await expect(
+			admin.reloadTraefik({ serverId: "server-b" }),
+		).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+		expect(mocks.updateServerById).not.toHaveBeenCalled();
+		expect(mocks.reloadDockerResource).not.toHaveBeenCalled();
 	});
 
 	it("rejects listing a server from another organization", async () => {

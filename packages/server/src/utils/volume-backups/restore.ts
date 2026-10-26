@@ -7,6 +7,7 @@ import {
 	getS3Credentials,
 	paths,
 } from "../..";
+import { assertServiceVolume } from "./access";
 
 export const restoreVolume = async (
 	id: string,
@@ -16,6 +17,13 @@ export const restoreVolume = async (
 	serverId: string,
 	serviceType: "application" | "compose",
 ) => {
+	const serviceServerId = await assertServiceVolume(
+		serviceType,
+		id,
+		volumeName,
+	);
+	if ((serverId || null) !== (serviceServerId || null))
+		throw new Error("Restore server does not match the service");
 	const destination = await findDestinationById(destinationId);
 	const { VOLUME_BACKUPS_PATH } = paths(!!serverId);
 	const volumeBackupPath = path.join(VOLUME_BACKUPS_PATH, volumeName);

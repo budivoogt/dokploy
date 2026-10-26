@@ -16,6 +16,7 @@ import {
 import { scheduledJobs, scheduleJob } from "node-schedule";
 import { getS3Credentials, normalizeS3Path } from "../backups/utils";
 import { sendVolumeBackupNotifications } from "../notifications/volume-backup";
+import { volumeBackupService } from "./access";
 import { backupVolume, getVolumeServiceAppName } from "./backup";
 
 // Helper functions to extract project info from volume backup
@@ -107,8 +108,8 @@ const cleanupOldVolumeBackups = async (
 
 export const runVolumeBackup = async (volumeBackupId: string) => {
 	const volumeBackup = await findVolumeBackupById(volumeBackupId);
-	const serverId =
-		volumeBackup.application?.serverId || volumeBackup.compose?.serverId;
+	const service = volumeBackupService(volumeBackup);
+	const serverId = volumeBackup[service.type]?.serverId;
 	const projectName = getProjectName(volumeBackup);
 	const organizationId = getOrganizationId(volumeBackup);
 	await findDestinationByIdForOrganization(

@@ -21,12 +21,17 @@ import {
 	findDestinationById,
 	findDestinationByIdForOrganization,
 } from "@dokploy/server/services/destination";
+import type { PermissionCtx } from "@dokploy/server/services/permission";
 import { checkServicePermissionAndAccess } from "@dokploy/server/services/permission";
 import { findServerById } from "@dokploy/server/services/server";
 import {
 	execAsyncRemote,
 	execAsyncStream,
 } from "@dokploy/server/utils/process/execAsync";
+import {
+	assertServiceVolume,
+	volumeBackupService,
+} from "@dokploy/server/utils/volume-backups/access";
 import { TRPCError } from "@trpc/server";
 import { observable } from "@trpc/server/observable";
 import { desc, eq } from "drizzle-orm";
@@ -35,6 +40,22 @@ import { audit } from "@/server/api/utils/audit";
 import { assertVolumeBackupLimit } from "@/server/api/utils/plan-limits";
 import { removeJob, schedule, updateJob } from "@/server/utils/backup";
 import { createTRPCRouter, protectedProcedure, withPermission } from "../trpc";
+
+const checkVolumeBackupAccess = async (
+	ctx: PermissionCtx,
+	target: Parameters<typeof volumeBackupService>[0] & { destinationId: string },
+	action: "read" | "create" | "update" | "delete",
+) => {
+	const service = volumeBackupService(target);
+	await checkServicePermissionAndAccess(ctx, service.id, {
+		volumeBackup: [action],
+	});
+	await findDestinationByIdForOrganization(
+		target.destinationId,
+		ctx.session.activeOrganizationId,
+	);
+	return service;
+};
 
 export const volumeBackupsRouter = createTRPCRouter({
 	list: protectedProcedure
@@ -85,27 +106,13 @@ export const volumeBackupsRouter = createTRPCRouter({
 	create: protectedProcedure
 		.input(createVolumeBackupSchema)
 		.mutation(async ({ input, ctx }) => {
-			const serviceType = (
-				[
-					"application",
-					"postgres",
-					"mysql",
-					"mariadb",
-					"mongo",
-					"redis",
-					"libsql",
-					"compose",
-				] as const
-			).find((type) => input[`${type}Id`]);
-			const serviceId = serviceType ? input[`${serviceType}Id`] : undefined;
-			if (serviceId) {
-				await checkServicePermissionAndAccess(ctx, serviceId, {
-					volumeBackup: ["create"],
-				});
-			}
-			await findDestinationByIdForOrganization(
-				input.destinationId,
-				ctx.session.activeOrganizationId,
+			const { type: serviceType, id: serviceId } =
+				await checkVolumeBackupAccess(ctx, input, "create");
+			await assertServiceVolume(
+				serviceType,
+				serviceId,
+				input.volumeName,
+				input.serviceName,
 			);
 			if (IS_CLOUD && serviceType && serviceId) {
 				const existingVolumeBackups = await db.query.volumeBackups.findMany({
@@ -144,20 +151,7 @@ export const volumeBackupsRouter = createTRPCRouter({
 		)
 		.query(async ({ input, ctx }) => {
 			const vb = await findVolumeBackupById(input.volumeBackupId);
-			const serviceId =
-				vb.applicationId ||
-				vb.postgresId ||
-				vb.mysqlId ||
-				vb.mariadbId ||
-				vb.mongoId ||
-				vb.redisId ||
-				vb.libsqlId ||
-				vb.composeId;
-			if (serviceId) {
-				await checkServicePermissionAndAccess(ctx, serviceId, {
-					volumeBackup: ["read"],
-				});
-			}
+			await checkVolumeBackupAccess(ctx, vb, "read");
 			return vb;
 		}),
 	delete: protectedProcedure
@@ -168,20 +162,7 @@ export const volumeBackupsRouter = createTRPCRouter({
 		)
 		.mutation(async ({ input, ctx }) => {
 			const vb = await findVolumeBackupById(input.volumeBackupId);
-			const serviceId =
-				vb.applicationId ||
-				vb.postgresId ||
-				vb.mysqlId ||
-				vb.mariadbId ||
-				vb.mongoId ||
-				vb.redisId ||
-				vb.libsqlId ||
-				vb.composeId;
-			if (serviceId) {
-				await checkServicePermissionAndAccess(ctx, serviceId, {
-					volumeBackup: ["delete"],
-				});
-			}
+			await checkVolumeBackupAccess(ctx, vb, "delete");
 			const result = await removeVolumeBackup(input.volumeBackupId);
 			await audit(ctx, {
 				action: "delete",
@@ -194,23 +175,17 @@ export const volumeBackupsRouter = createTRPCRouter({
 		.input(updateVolumeBackupSchema)
 		.mutation(async ({ input, ctx }) => {
 			const existingVb = await findVolumeBackupById(input.volumeBackupId);
-			const serviceId =
-				existingVb.applicationId ||
-				existingVb.postgresId ||
-				existingVb.mysqlId ||
-				existingVb.mariadbId ||
-				existingVb.mongoId ||
-				existingVb.redisId ||
-				existingVb.libsqlId ||
-				existingVb.composeId;
-			if (serviceId) {
-				await checkServicePermissionAndAccess(ctx, serviceId, {
-					volumeBackup: ["update"],
-				});
-			}
-			await findDestinationByIdForOrganization(
-				input.destinationId,
-				ctx.session.activeOrganizationId,
+			await checkVolumeBackupAccess(ctx, existingVb, "update");
+			const service = await checkVolumeBackupAccess(
+				ctx,
+				{ ...existingVb, ...input },
+				"update",
+			);
+			await assertServiceVolume(
+				service.type,
+				service.id,
+				input.volumeName,
+				input.serviceName,
 			);
 			const updatedVolumeBackup = await updateVolumeBackup(
 				input.volumeBackupId,
@@ -258,20 +233,13 @@ export const volumeBackupsRouter = createTRPCRouter({
 		.input(z.object({ volumeBackupId: z.string().min(1) }))
 		.mutation(async ({ input, ctx }) => {
 			const vb = await findVolumeBackupById(input.volumeBackupId);
-			const serviceId =
-				vb.applicationId ||
-				vb.postgresId ||
-				vb.mysqlId ||
-				vb.mariadbId ||
-				vb.mongoId ||
-				vb.redisId ||
-				vb.libsqlId ||
-				vb.composeId;
-			if (serviceId) {
-				await checkServicePermissionAndAccess(ctx, serviceId, {
-					volumeBackup: ["create"],
-				});
-			}
+			const service = await checkVolumeBackupAccess(ctx, vb, "create");
+			await assertServiceVolume(
+				service.type,
+				service.id,
+				vb.volumeName,
+				vb.serviceName,
+			);
 			try {
 				const result = await runVolumeBackup(input.volumeBackupId);
 				await audit(ctx, {
@@ -308,6 +276,20 @@ export const volumeBackupsRouter = createTRPCRouter({
 			}),
 		)
 		.subscription(async ({ input, ctx }) => {
+			await checkServicePermissionAndAccess(ctx, input.id, {
+				volumeBackup: ["restore"],
+			});
+			const serviceServerId = await assertServiceVolume(
+				input.serviceType,
+				input.id,
+				input.volumeName,
+			);
+			if ((input.serverId || null) !== (serviceServerId || null)) {
+				throw new TRPCError({
+					code: "UNAUTHORIZED",
+					message: "Restore server does not match the service",
+				});
+			}
 			const destination = await findDestinationById(input.destinationId);
 			if (destination.organizationId !== ctx.session.activeOrganizationId) {
 				throw new TRPCError({

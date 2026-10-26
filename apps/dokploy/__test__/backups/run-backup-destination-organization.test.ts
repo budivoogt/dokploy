@@ -100,6 +100,7 @@ const backup = {
 
 const volumeBackup = {
 	volumeBackupId: "vb-1",
+	applicationId: "app-1",
 	name: "data",
 	appName: "vb-app",
 	volumeName: "app_data",

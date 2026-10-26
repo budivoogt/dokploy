@@ -10,6 +10,9 @@
 # Only triggered manually to avoid burning Actions minutes.
 
 name: Upgrade Integration Test
+permissions:
+  contents: read
+  packages: read
 
 on:
   workflow_dispatch:

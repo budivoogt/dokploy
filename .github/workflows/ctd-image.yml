@@ -4,10 +4,18 @@ on:
   # Registry publication is intentionally manual. Ordinary pushes and PRs must
   # never publish a candidate without a fresh rollout decision.
   workflow_dispatch:
+  pull_request:
+    branches: [canary]
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
 
 env:
   REGISTRY: ghcr.io
   IMAGE: ghcr.io/budivoogt/dokploy
+
+permissions:
+  contents: read
+  packages: read
 
 concurrency:
   group: ctd-image-${{ github.ref }}
@@ -25,6 +33,8 @@ jobs:
           node-version: 24.22.1
       - run: corepack enable && corepack prepare pnpm@10.22.0 --activate
       - run: pnpm install --frozen-lockfile
+      - name: Compile server security boundaries
+        run: pnpm --filter=@dokploy/server build
       - name: Retained fork and upstream security regressions
         working-directory: apps/dokploy
         run: >-
@@ -46,21 +56,39 @@ jobs:
           __test__/drop/drop.test.ts
           __test__/permissions/cross-org-scope.test.ts
           __test__/permissions/service-access.test.ts
+          __test__/permissions/deployment-resource-access.test.ts
           __test__/backups/backup-destination-organization.test.ts
           __test__/backups/run-backup-destination-organization.test.ts
           __test__/backups/volume-backup-destination-organization.test.ts
           __test__/certificates/certificate-path-traversal.test.ts
           __test__/compose/branch-validation.test.ts
           __test__/traefik/traefik-files-server-organization.test.ts
+          __test__/traefik/confined-files.test.ts
+          __test__/traefik/sftp-files.test.ts
 
   build:
     needs: regression
+    if: >-
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify protected default-branch provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/branches/${DEFAULT_BRANCH}" --jq '.protected')" = true
+          git merge-base --is-ancestor "${GITHUB_SHA}" "origin/${DEFAULT_BRANCH}"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -69,7 +97,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PAT }}
+          password: ${{ github.token }}
 
       - name: Compute tags
         id: tags

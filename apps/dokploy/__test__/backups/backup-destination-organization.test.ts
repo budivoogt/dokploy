@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => ({
 	restorePostgresBackup: vi.fn(),
 	restoreWebServerBackup: vi.fn(),
 	findDestinationRow: vi.fn(),
+	findMemberByUserId: vi.fn(),
+	removeBackupById: vi.fn(),
+	runWebServerBackup: vi.fn(),
 }));
 
 vi.mock("@dokploy/server/db", () => ({
@@ -15,6 +18,7 @@ vi.mock("@dokploy/server/db", () => ({
 }));
 
 vi.mock("@dokploy/server/services/permission", () => ({
+	findMemberByUserId: mocks.findMemberByUserId,
 	checkPermission: vi.fn(async () => undefined),
 	checkServicePermissionAndAccess: vi.fn(async () => undefined),
 }));
@@ -24,6 +28,8 @@ vi.mock("@dokploy/server", () => ({
 	createBackup: mocks.createBackup,
 	findBackupById: mocks.findBackupById,
 	updateBackupById: mocks.updateBackupById,
+	removeBackupById: mocks.removeBackupById,
+	runWebServerBackup: mocks.runWebServerBackup,
 	findPostgresById: mocks.findPostgresById,
 	scheduleBackup: vi.fn(),
 	removeScheduleBackup: vi.fn(),
@@ -113,6 +119,8 @@ const drain = async (stream: unknown) => {
 describe("backup endpoints scope destinations to the active organization", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mocks.findMemberByUserId.mockResolvedValue({ role: "owner" });
+		mocks.findDestinationRow.mockResolvedValue(ownDestination);
 		mocks.createBackup.mockResolvedValue({ backupId: "backup-1" });
 		mocks.findBackupById.mockResolvedValue({
 			backupId: "backup-1",
@@ -181,16 +189,66 @@ describe("backup endpoints scope destinations to the active organization", () =>
 		expect(mocks.restorePostgresBackup).toHaveBeenCalledTimes(1);
 	});
 
-	it("leaves service-less web-server schedules unscoped (maintainer decision)", async () => {
+	it("rejects service-less web-server schedules with foreign destinations", async () => {
 		mocks.findDestinationRow.mockResolvedValue(foreignDestination);
 
-		await caller.create({
-			...createInput,
-			postgresId: undefined,
-			databaseType: "web-server",
-			destinationId: "dest-b",
-		});
+		await expect(
+			caller.create({
+				...createInput,
+				postgresId: undefined,
+				databaseType: "web-server",
+				destinationId: "dest-b",
+			}),
+		).rejects.toMatchObject({ code: "UNAUTHORIZED" });
 
-		expect(mocks.createBackup).toHaveBeenCalledTimes(1);
+		expect(mocks.createBackup).not.toHaveBeenCalled();
+	});
+
+	it("denies ordinary members all service-less backup operations", async () => {
+		mocks.findMemberByUserId.mockResolvedValue({ role: "member" });
+		mocks.findBackupById.mockResolvedValue({
+			backupId: "backup-1",
+			databaseType: "web-server",
+			destinationId: "dest-a",
+		});
+		await expect(
+			caller.create({
+				...createInput,
+				postgresId: undefined,
+				databaseType: "web-server",
+				destinationId: "dest-a",
+			}),
+		).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+		await expect(caller.one({ backupId: "backup-1" })).rejects.toMatchObject({
+			code: "UNAUTHORIZED",
+		});
+		await expect(caller.remove({ backupId: "backup-1" })).rejects.toMatchObject(
+			{ code: "UNAUTHORIZED" },
+		);
+		await expect(
+			caller.update({
+				...updateInput,
+				databaseType: "web-server",
+				destinationId: "dest-a",
+			}),
+		).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+		await expect(
+			caller.manualBackupWebServer({ backupId: "backup-1" }),
+		).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+		expect(mocks.createBackup).not.toHaveBeenCalled();
+		expect(mocks.removeBackupById).not.toHaveBeenCalled();
+		expect(mocks.updateBackupById).not.toHaveBeenCalled();
+		expect(mocks.runWebServerBackup).not.toHaveBeenCalled();
+	});
+
+	it("denies whole-panel restore even to an owner", async () => {
+		const stream = await caller.restoreBackupWithLogs({
+			...restoreInput,
+			databaseType: "web-server",
+			databaseId: "",
+			destinationId: "dest-a",
+		});
+		await expect(drain(stream)).rejects.toMatchObject({ code: "FORBIDDEN" });
+		expect(mocks.restoreWebServerBackup).not.toHaveBeenCalled();
 	});
 });

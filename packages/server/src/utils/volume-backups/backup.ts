@@ -8,6 +8,7 @@ import {
 	getS3Credentials,
 	normalizeS3Path,
 } from "../backups/utils";
+import { assertServiceVolume, volumeBackupService } from "./access";
 
 interface RestartSafeBackupCommandOptions {
 	stopCommand: string;
@@ -69,9 +70,14 @@ export const backupVolume = async (
 	volumeBackup: Awaited<ReturnType<typeof findVolumeBackupById>>,
 ) => {
 	const { serviceType, volumeName, turnOff, prefix } = volumeBackup;
+	const service = volumeBackupService(volumeBackup);
+	const serverId = await assertServiceVolume(
+		service.type,
+		service.id,
+		volumeName,
+		volumeBackup.serviceName,
+	);
 	const destination = await findDestinationById(volumeBackup.destinationId);
-	const serverId =
-		volumeBackup.application?.serverId || volumeBackup.compose?.serverId;
 	const { VOLUME_BACKUPS_PATH, VOLUME_BACKUP_LOCK_PATH } = paths(!!serverId);
 	const s3AppName = getVolumeServiceAppName(volumeBackup);
 	const backupFileName = `${volumeName}-${getBackupTimestamp()}.tar`;

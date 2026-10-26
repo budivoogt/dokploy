@@ -3,6 +3,7 @@ import util from "node:util";
 import { findServerById } from "@dokploy/server/services/server";
 import { quote } from "shell-quote";
 import { Client, type ConnectConfig, type SFTPWrapper } from "ssh2";
+import { writeSftpFile } from "../filesystem/sftp-file";
 import { ExecError } from "./ExecError";
 import {
 	cleanupSecretTempFiles,
@@ -358,19 +359,20 @@ export const writeFileRemote = async (
 						);
 						return;
 					}
-					sftp.writeFile(remotePath, content, (writeErr) => {
-						conn.end();
-						if (writeErr) {
+					writeSftpFile(sftp, remotePath, content)
+						.then(() => {
+							conn.end();
+							resolve();
+						})
+						.catch((writeErr: Error) => {
+							conn.end();
 							reject(
 								new WriteFileRemoteError(
 									`Failed to write remote file ${remotePath}: ${writeErr.message}`,
 									{ remotePath, serverId, originalError: writeErr },
 								),
 							);
-							return;
-						}
-						resolve();
-					});
+						});
 				});
 			})
 			.on("error", (err) => {
