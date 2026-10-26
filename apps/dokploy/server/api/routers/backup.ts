@@ -63,7 +63,7 @@ import {
 } from "@/server/api/trpc";
 import { audit } from "@/server/api/utils/audit";
 import { assertDatabaseBackupLimit } from "@/server/api/utils/plan-limits";
-import { requireOrganizationAdmin } from "@/server/api/utils/resource-access";
+import { requirePanelOwner } from "@/server/api/utils/resource-access";
 import {
 	apiCreateBackup,
 	apiFindOneBackup,
@@ -111,7 +111,7 @@ const checkBackupAccess = async (
 		backup.composeId,
 	].filter(Boolean);
 	if (backup.databaseType === "web-server" || ids.length === 0) {
-		await requireOrganizationAdmin(ctx);
+		await requirePanelOwner(ctx);
 		if (backup.databaseType === "web-server" && ids.length !== 0) {
 			throw new TRPCError({
 				code: "BAD_REQUEST",
@@ -480,8 +480,8 @@ export const backupRouter = createTRPCRouter({
 	manualBackupWebServer: withPermission("backup", "create")
 		.input(apiFindOneBackup)
 		.mutation(async ({ input, ctx }) => {
+			await requirePanelOwner(ctx);
 			const backup = await findBackupById(input.backupId);
-			await requireOrganizationAdmin(ctx);
 			if (backup.databaseType !== "web-server") {
 				throw new TRPCError({
 					code: "BAD_REQUEST",

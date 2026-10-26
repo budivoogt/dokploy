@@ -166,12 +166,12 @@ describe("backup endpoints scope destinations to the active organization", () =>
 	it("rejects restoring from a destination of another organization", async () => {
 		mocks.findDestinationRow.mockResolvedValue(foreignDestination);
 
-		const stream = await caller.restoreBackupWithLogs({
-			...restoreInput,
-			destinationId: "dest-b",
-		});
-
-		await expect(drain(stream)).rejects.toMatchObject({
+		await expect(
+			caller.restoreBackupWithLogs({
+				...restoreInput,
+				destinationId: "dest-b",
+			}),
+		).rejects.toMatchObject({
 			code: "UNAUTHORIZED",
 		});
 		expect(mocks.restorePostgresBackup).not.toHaveBeenCalled();
@@ -242,13 +242,41 @@ describe("backup endpoints scope destinations to the active organization", () =>
 	});
 
 	it("denies whole-panel restore even to an owner", async () => {
-		const stream = await caller.restoreBackupWithLogs({
-			...restoreInput,
+		await expect(
+			caller.restoreBackupWithLogs({
+				...restoreInput,
+				databaseType: "web-server",
+				databaseId: "",
+				destinationId: "dest-a",
+			}),
+		).rejects.toMatchObject({ code: "FORBIDDEN" });
+		expect(mocks.restoreWebServerBackup).not.toHaveBeenCalled();
+	});
+
+	it("denies a panel admin exporting shared control-plane data", async () => {
+		mocks.findMemberByUserId.mockResolvedValue({ role: "admin" });
+		const admin = backupRouter.createCaller({
+			session: { activeOrganizationId: "org-a" },
+			user: { id: "admin-1", email: "admin@example.com", role: "admin" },
+		} as Parameters<typeof backupRouter.createCaller>[0]);
+		await expect(
+			admin.create({
+				...createInput,
+				postgresId: undefined,
+				databaseType: "web-server",
+				destinationId: "dest-a",
+			}),
+		).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+		expect(mocks.createBackup).not.toHaveBeenCalled();
+	});
+
+	it("allows the panel owner to configure a control-plane backup to its own destination", async () => {
+		await caller.create({
+			...createInput,
+			postgresId: undefined,
 			databaseType: "web-server",
-			databaseId: "",
 			destinationId: "dest-a",
 		});
-		await expect(drain(stream)).rejects.toMatchObject({ code: "FORBIDDEN" });
-		expect(mocks.restoreWebServerBackup).not.toHaveBeenCalled();
+		expect(mocks.createBackup).toHaveBeenCalledTimes(1);
 	});
 });

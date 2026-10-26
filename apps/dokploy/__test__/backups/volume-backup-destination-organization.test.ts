@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 	execAsync: vi.fn(),
 	runVolumeBackup: vi.fn(),
 	removeVolumeBackup: vi.fn(),
+	findMounts: vi.fn(),
 }));
 
 vi.mock("@dokploy/server/db", () => ({
@@ -65,6 +66,12 @@ vi.mock("@dokploy/server/services/redis", () => ({
 vi.mock("@dokploy/server/services/libsql", () => ({
 	findLibsqlById: mocks.loadService,
 }));
+vi.mock("@dokploy/server/services/mount", () => ({
+	findMountsByApplicationId: mocks.findMounts,
+}));
+vi.mock("@dokploy/server/utils/backups/utils", () => ({
+	getS3Credentials: vi.fn(() => []),
+}));
 
 vi.mock("@dokploy/server/utils/process/execAsync", () => ({
 	execAsync: mocks.execAsync,
@@ -101,7 +108,11 @@ const caller = volumeBackupsRouter.createCaller({
 	user: { id: "user-1", email: "user@example.com", role: "owner" },
 } as Parameters<typeof volumeBackupsRouter.createCaller>[0]);
 
-const ownDestination = { destinationId: "dest-a", organizationId: "org-a" };
+const ownDestination = {
+	destinationId: "dest-a",
+	organizationId: "org-a",
+	bucket: "backups",
+};
 const foreignDestination = { destinationId: "dest-b", organizationId: "org-b" };
 
 const createInput = {
@@ -120,6 +131,14 @@ describe("volume backup endpoints scope destinations to the active organization"
 		mocks.serviceAccess.mockResolvedValue(undefined);
 		mocks.findDestinationRow.mockResolvedValue(ownDestination);
 		mocks.loadService.mockResolvedValue({ appName: "app", serverId: null });
+		mocks.findMounts.mockResolvedValue([
+			{
+				type: "volume",
+				serviceType: "application",
+				applicationId: "app-1",
+				volumeName: "app_data",
+			},
+		]);
 		mocks.execAsync.mockImplementation(async (command: string) => ({
 			stdout: command.includes("inspect")
 				? '[{"Type":"volume","Name":"app_data"}]'
@@ -229,6 +248,102 @@ describe("volume backup endpoints scope destinations to the active organization"
 		).rejects.toThrow("does not match");
 	});
 
+	it("generates an own-volume restore after all containers and the volume have been removed", async () => {
+		mocks.execAsync.mockResolvedValue({ stdout: "", stderr: "" });
+		const command = await restoreVolume(
+			"app-1",
+			"dest-a",
+			"app_data",
+			"data.tar",
+			"",
+			"application",
+		);
+		expect(command).toContain("-v app_data:/volume_data");
+		expect(command).toContain('docker ps -a --filter "volume=app_data"');
+		expect(command).toContain("Volume restore aborted - volume is in use");
+		expect(mocks.execAsync).not.toHaveBeenCalled();
+	});
+
+	it("refuses a foreign volume after teardown", async () => {
+		mocks.execAsync.mockResolvedValue({ stdout: "", stderr: "" });
+		await expect(
+			restoreVolume(
+				"app-1",
+				"dest-a",
+				"foreign_data",
+				"data.tar",
+				"",
+				"application",
+			),
+		).rejects.toThrow("does not belong");
+		expect(mocks.execAsync).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{ applicationId: "foreign-app" },
+		{ applicationId: "app-1", composeId: "compose-2" },
+	])(
+		"refuses foreign or ambiguous persisted mount ownership",
+		async (target) => {
+			mocks.findMounts.mockResolvedValue([
+				{
+					type: "volume",
+					serviceType: "application",
+					volumeName: "app_data",
+					...target,
+				},
+			]);
+			await expect(
+				restoreVolume(
+					"app-1",
+					"dest-a",
+					"app_data",
+					"data.tar",
+					"",
+					"application",
+				),
+			).rejects.toThrow("does not belong");
+			expect(mocks.execAsync).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each([
+		{ definition: "{}", name: "app_data" },
+		{ definition: "{name: durable_data}", name: "durable_data" },
+		{ definition: "{external: true}", name: "data" },
+	])(
+		"restores a persisted raw Compose volume after teardown: $name",
+		async ({ definition, name }) => {
+			mocks.findMounts.mockResolvedValue([]);
+			mocks.loadService.mockResolvedValue({
+				appName: "app",
+				serverId: null,
+				sourceType: "raw",
+				composeFile: `services:\n  database:\n    image: postgres\n    volumes: [data:/var/lib/data]\nvolumes:\n  data: ${definition}\n`,
+			});
+			const command = await restoreVolume(
+				"compose-1",
+				"dest-a",
+				name,
+				"data.tar",
+				"",
+				"compose",
+			);
+			expect(command).toContain(`-v ${name}:/volume_data`);
+			expect(mocks.execAsync).not.toHaveBeenCalled();
+			await expect(
+				restoreVolume(
+					"compose-1",
+					"dest-a",
+					"foreign_data",
+					"data.tar",
+					"",
+					"compose",
+				),
+			).rejects.toThrow("does not belong");
+		},
+	);
+
 	it("checks access to stored definitions before read, delete, update and execution", async () => {
 		mocks.serviceAccess.mockRejectedValue(new Error("Foreign service denied"));
 		await expect(caller.one({ volumeBackupId: "vb-1" })).rejects.toThrow(
@@ -254,18 +369,14 @@ describe("volume backup endpoints scope destinations to the active organization"
 
 	it("checks the restore service before executing a command", async () => {
 		mocks.serviceAccess.mockRejectedValue(new Error("Foreign service denied"));
-		const stream = await caller.restoreVolumeBackupWithLogs({
-			id: "foreign-app",
-			serviceType: "application",
-			volumeName: "app_data",
-			destinationId: "dest-a",
-			backupFileName: "data.tar",
-		});
 		await expect(
-			(async () => {
-				for await (const _ of stream as AsyncIterable<string>) {
-				}
-			})(),
+			caller.restoreVolumeBackupWithLogs({
+				id: "foreign-app",
+				serviceType: "application",
+				volumeName: "app_data",
+				destinationId: "dest-a",
+				backupFileName: "data.tar",
+			}),
 		).rejects.toThrow("Foreign service denied");
 		expect(mocks.execAsync).not.toHaveBeenCalled();
 	});

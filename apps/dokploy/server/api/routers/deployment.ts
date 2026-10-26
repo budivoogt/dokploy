@@ -32,6 +32,7 @@ import { audit } from "@/server/api/utils/audit";
 import {
 	assertServerOrganization,
 	requireOrganizationAdmin,
+	requirePanelOwner,
 } from "@/server/api/utils/resource-access";
 import {
 	apiFindAllByApplication,
@@ -183,7 +184,8 @@ export const deploymentRouter = createTRPCRouter({
 	),
 
 	queueList: withPermission("deployment", "read").query(async ({ ctx }) => {
-		await requireOrganizationAdmin(ctx);
+		if (IS_CLOUD) await requireOrganizationAdmin(ctx);
+		else await requirePanelOwner(ctx);
 		const orgId = ctx.session.activeOrganizationId;
 		let rows: QueueJobRow[];
 

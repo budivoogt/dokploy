@@ -1,9 +1,11 @@
 import { quote } from "shell-quote";
+import { parse } from "yaml";
 import { findApplicationById } from "../../services/application";
 import { findComposeById } from "../../services/compose";
 import { findLibsqlById } from "../../services/libsql";
 import { findMariadbById } from "../../services/mariadb";
 import { findMongoById } from "../../services/mongo";
+import { findMountsByApplicationId } from "../../services/mount";
 import { findMySqlById } from "../../services/mysql";
 import { findPostgresById } from "../../services/postgres";
 import { findRedisById } from "../../services/redis";
@@ -35,6 +37,89 @@ export const volumeBackupService = (target: VolumeTarget) => {
 		);
 	}
 	return { type, id: target[`${type}Id`] as string };
+};
+
+const record = (value: unknown): value is Record<string, unknown> =>
+	value !== null && typeof value === "object" && !Array.isArray(value);
+
+const declaredComposeVolume = (
+	compose: Awaited<ReturnType<typeof findComposeById>>,
+	volumeName: string,
+) => {
+	if (
+		compose.sourceType !== "raw" ||
+		compose.command ||
+		compose.randomize ||
+		compose.isolatedDeployment
+	)
+		return false;
+	const config: unknown = parse(compose.composeFile);
+	if (!record(config) || !record(config.volumes) || !record(config.services))
+		return false;
+	for (const service of Object.values(config.services)) {
+		if (!record(service) || !Array.isArray(service.volumes)) continue;
+		for (const mount of service.volumes) {
+			const source =
+				typeof mount === "string"
+					? mount.includes(":")
+						? mount.split(":")[0]
+						: undefined
+					: record(mount) && mount.type === "volume"
+						? mount.source
+						: undefined;
+			if (typeof source !== "string" || !Object.hasOwn(config.volumes, source))
+				continue;
+			const definition = config.volumes[source];
+			if (definition !== null && !record(definition)) continue;
+			if (
+				definition?.external !== undefined &&
+				typeof definition.external !== "boolean"
+			)
+				continue;
+			const name =
+				definition && typeof definition.name === "string"
+					? definition.name
+					: definition?.external === true
+						? source
+						: `${compose.appName}_${source}`;
+			if (name === volumeName) return true;
+		}
+	}
+	return false;
+};
+
+export const assertDeclaredServiceVolume = async (
+	type: "application" | "compose",
+	id: string,
+	volumeName: string,
+) => {
+	if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(volumeName))
+		throw new Error("Invalid volume name");
+	const service = await loaders[type](id);
+	const mounts = await findMountsByApplicationId(id, type);
+	const declared = mounts.some((mount) => {
+		if (
+			mount.type !== "volume" ||
+			mount.volumeName !== volumeName ||
+			mount.serviceType !== type
+		)
+			return false;
+		const ids = (Object.keys(loaders) as ServiceType[]).filter(
+			(kind) => mount[`${kind}Id`],
+		);
+		return ids.length === 1 && mount[`${type}Id`] === id;
+	});
+	if (
+		!declared &&
+		!(
+			type === "compose" &&
+			"composeFile" in service &&
+			declaredComposeVolume(service, volumeName)
+		)
+	) {
+		throw new Error("Volume does not belong to the declared service");
+	}
+	return service.serverId;
 };
 
 export const assertServiceVolume = async (

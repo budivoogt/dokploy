@@ -15,6 +15,11 @@ export const requireOrganizationAdmin = async (ctx: PermissionCtx) => {
 	}
 };
 
+export const requirePanelOwner = async (ctx: PermissionCtx) => {
+	if (ctx.user.role !== "owner") throw new TRPCError({ code: "UNAUTHORIZED" });
+	await requireOrganizationAdmin(ctx);
+};
+
 export const assertServerOrganization = async (
 	ctx: PermissionCtx,
 	serverId?: string | null,

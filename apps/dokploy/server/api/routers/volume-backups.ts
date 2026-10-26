@@ -29,6 +29,7 @@ import {
 	execAsyncStream,
 } from "@dokploy/server/utils/process/execAsync";
 import {
+	assertDeclaredServiceVolume,
 	assertServiceVolume,
 	volumeBackupService,
 } from "@dokploy/server/utils/volume-backups/access";
@@ -279,7 +280,7 @@ export const volumeBackupsRouter = createTRPCRouter({
 			await checkServicePermissionAndAccess(ctx, input.id, {
 				volumeBackup: ["restore"],
 			});
-			const serviceServerId = await assertServiceVolume(
+			const serviceServerId = await assertDeclaredServiceVolume(
 				input.serviceType,
 				input.id,
 				input.volumeName,

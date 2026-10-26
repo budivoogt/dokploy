@@ -157,6 +157,24 @@ describe("deployment resource ownership", () => {
 		drainDeniedEffects();
 	});
 
+	it("denies a panel admin the shared self-hosted raw queue", async () => {
+		mocks.findMemberByUserId.mockResolvedValue({ role: "admin" });
+		const admin = deploymentRouter.createCaller({
+			session: { activeOrganizationId: "org-a" },
+			user: { id: "admin-1", email: "admin@example.com", role: "admin" },
+		} as Parameters<typeof deploymentRouter.createCaller>[0]);
+		await expect(admin.queueList()).rejects.toMatchObject({
+			code: "UNAUTHORIZED",
+		});
+		expect(mocks.queue).not.toHaveBeenCalled();
+	});
+
+	it("allows the panel owner to inspect the shared queue", async () => {
+		mocks.queue.mockResolvedValue([]);
+		expect(await caller.queueList()).toEqual([]);
+		expect(mocks.queue).toHaveBeenCalledTimes(1);
+	});
+
 	it("permits a service backup log through its owning service", async () => {
 		mocks.findDeploymentById.mockResolvedValue({
 			backupId: "backup-a",
