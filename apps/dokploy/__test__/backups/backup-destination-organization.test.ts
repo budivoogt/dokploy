@@ -11,10 +11,16 @@ const mocks = vi.hoisted(() => ({
 	findMemberByUserId: vi.fn(),
 	removeBackupById: vi.fn(),
 	runWebServerBackup: vi.fn(),
+	findUser: vi.fn(),
 }));
 
 vi.mock("@dokploy/server/db", () => ({
-	db: { query: { destinations: { findFirst: mocks.findDestinationRow } } },
+	db: {
+		query: {
+			destinations: { findFirst: mocks.findDestinationRow },
+			user: { findFirst: mocks.findUser },
+		},
+	},
 }));
 
 vi.mock("@dokploy/server/services/permission", () => ({
@@ -120,6 +126,7 @@ describe("backup endpoints scope destinations to the active organization", () =>
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mocks.findMemberByUserId.mockResolvedValue({ role: "owner" });
+		mocks.findUser.mockResolvedValue({ role: "owner" });
 		mocks.findDestinationRow.mockResolvedValue(ownDestination);
 		mocks.createBackup.mockResolvedValue({ backupId: "backup-1" });
 		mocks.findBackupById.mockResolvedValue({
@@ -166,12 +173,11 @@ describe("backup endpoints scope destinations to the active organization", () =>
 	it("rejects restoring from a destination of another organization", async () => {
 		mocks.findDestinationRow.mockResolvedValue(foreignDestination);
 
-		await expect(
-			caller.restoreBackupWithLogs({
-				...restoreInput,
-				destinationId: "dest-b",
-			}),
-		).rejects.toMatchObject({
+		const stream = await caller.restoreBackupWithLogs({
+			...restoreInput,
+			destinationId: "dest-b",
+		});
+		await expect(drain(stream)).rejects.toMatchObject({
 			code: "UNAUTHORIZED",
 		});
 		expect(mocks.restorePostgresBackup).not.toHaveBeenCalled();
@@ -242,19 +248,19 @@ describe("backup endpoints scope destinations to the active organization", () =>
 	});
 
 	it("denies whole-panel restore even to an owner", async () => {
-		await expect(
-			caller.restoreBackupWithLogs({
-				...restoreInput,
-				databaseType: "web-server",
-				databaseId: "",
-				destinationId: "dest-a",
-			}),
-		).rejects.toMatchObject({ code: "FORBIDDEN" });
+		const stream = await caller.restoreBackupWithLogs({
+			...restoreInput,
+			databaseType: "web-server",
+			databaseId: "",
+			destinationId: "dest-a",
+		});
+		await expect(drain(stream)).rejects.toMatchObject({ code: "FORBIDDEN" });
 		expect(mocks.restoreWebServerBackup).not.toHaveBeenCalled();
 	});
 
 	it("denies a panel admin exporting shared control-plane data", async () => {
 		mocks.findMemberByUserId.mockResolvedValue({ role: "admin" });
+		mocks.findUser.mockResolvedValue({ role: "admin" });
 		const admin = backupRouter.createCaller({
 			session: { activeOrganizationId: "org-a" },
 			user: { id: "admin-1", email: "admin@example.com", role: "admin" },

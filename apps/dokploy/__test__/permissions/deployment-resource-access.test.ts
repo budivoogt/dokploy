@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
 	updateDeploymentStatus: vi.fn(),
 	list: vi.fn(),
 	queue: vi.fn(),
+	findUser: vi.fn(),
 }));
 vi.mock("@dokploy/server", () => ({
 	...mocks,
@@ -28,7 +30,12 @@ vi.mock("@dokploy/server", () => ({
 	resolveServicePath: vi.fn(),
 }));
 vi.mock("@dokploy/server/db", () => ({
-	db: { query: { deployments: { findMany: mocks.list } } },
+	db: {
+		query: {
+			deployments: { findMany: mocks.list },
+			user: { findFirst: mocks.findUser },
+		},
+	},
 }));
 vi.mock("@dokploy/server/services/permission", () => ({
 	checkPermission: mocks.checkPermission,
@@ -49,6 +56,9 @@ vi.mock("@/server/queues/queueSetup", () => ({
 vi.mock("@/server/utils/deploy", () => ({ fetchDeployApiJobs: vi.fn() }));
 
 const { deploymentRouter } = await import("@/server/api/routers/deployment");
+const { requirePanelOwner } = await import(
+	"@/server/api/utils/resource-access"
+);
 const caller = deploymentRouter.createCaller({
 	session: { activeOrganizationId: "org-a" },
 	user: { id: "user-a", email: "user@example.com", role: "owner" },
@@ -62,6 +72,7 @@ const drainDeniedEffects = () => {
 beforeEach(() => {
 	vi.clearAllMocks();
 	mocks.findMemberByUserId.mockResolvedValue({ role: "owner" });
+	mocks.findUser.mockResolvedValue({ role: "owner" });
 	mocks.findServerById.mockImplementation(async (id: string) => ({
 		organizationId: id === "server-a" ? "org-a" : "org-b",
 	}));
@@ -159,6 +170,7 @@ describe("deployment resource ownership", () => {
 
 	it("denies a panel admin the shared self-hosted raw queue", async () => {
 		mocks.findMemberByUserId.mockResolvedValue({ role: "admin" });
+		mocks.findUser.mockResolvedValue({ role: "admin" });
 		const admin = deploymentRouter.createCaller({
 			session: { activeOrganizationId: "org-a" },
 			user: { id: "admin-1", email: "admin@example.com", role: "admin" },
@@ -173,6 +185,35 @@ describe("deployment resource ownership", () => {
 		mocks.queue.mockResolvedValue([]);
 		expect(await caller.queueList()).toEqual([]);
 		expect(mocks.queue).toHaveBeenCalledTimes(1);
+	});
+
+	it("denies the database admin role even when the request context claims owner", async () => {
+		mocks.findUser.mockResolvedValue({ role: "admin" });
+		await expect(caller.queueList()).rejects.toMatchObject({
+			code: "UNAUTHORIZED",
+		});
+		expect(mocks.queue).not.toHaveBeenCalled();
+	});
+
+	it("authorizes the database owner role from a context containing only the user ID", async () => {
+		await expect(
+			requirePanelOwner({
+				user: { id: "user-a" },
+				session: { activeOrganizationId: "org-a" },
+			}),
+		).resolves.toBeUndefined();
+		const query = mocks.findUser.mock.calls[0]?.[0];
+		expect(query.columns).toEqual({ role: true });
+		expect(new PgDialect().sqlToQuery(query.where).params).toEqual(["user-a"]);
+		expect(mocks.findMemberByUserId).toHaveBeenCalledWith("user-a", "org-a");
+	});
+
+	it("denies an account that no longer exists", async () => {
+		mocks.findUser.mockResolvedValue(undefined);
+		await expect(caller.queueList()).rejects.toMatchObject({
+			code: "UNAUTHORIZED",
+		});
+		expect(mocks.queue).not.toHaveBeenCalled();
 	});
 
 	it("permits a service backup log through its owning service", async () => {

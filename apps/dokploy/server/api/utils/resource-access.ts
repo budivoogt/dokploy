@@ -1,9 +1,12 @@
+import { db } from "@dokploy/server/db";
+import { user } from "@dokploy/server/db/schema";
 import {
 	findMemberByUserId,
 	type PermissionCtx,
 } from "@dokploy/server/services/permission";
 import { findServerById } from "@dokploy/server/services/server";
 import { TRPCError } from "@trpc/server";
+import { eq } from "drizzle-orm";
 
 export const requireOrganizationAdmin = async (ctx: PermissionCtx) => {
 	const member = await findMemberByUserId(
@@ -16,7 +19,11 @@ export const requireOrganizationAdmin = async (ctx: PermissionCtx) => {
 };
 
 export const requirePanelOwner = async (ctx: PermissionCtx) => {
-	if (ctx.user.role !== "owner") throw new TRPCError({ code: "UNAUTHORIZED" });
+	const account = await db.query.user.findFirst({
+		where: eq(user.id, ctx.user.id),
+		columns: { role: true },
+	});
+	if (account?.role !== "owner") throw new TRPCError({ code: "UNAUTHORIZED" });
 	await requireOrganizationAdmin(ctx);
 };
 
