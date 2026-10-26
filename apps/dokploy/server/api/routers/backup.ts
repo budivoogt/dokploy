@@ -266,6 +266,7 @@ export const backupRouter = createTRPCRouter({
 					resourceId: backup.backupId,
 				});
 			} catch (error) {
+				if (error instanceof TRPCError) throw error;
 				const message =
 					error instanceof Error ? error.message : "Error updating this Backup";
 				throw new TRPCError({
@@ -298,6 +299,7 @@ export const backupRouter = createTRPCRouter({
 				});
 				return value;
 			} catch (error) {
+				if (error instanceof TRPCError) throw error;
 				const message =
 					error instanceof Error ? error.message : "Error deleting this Backup";
 				throw new TRPCError({
