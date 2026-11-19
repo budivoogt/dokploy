@@ -1,0 +1,197 @@
+{
+  "schema": "salvage-provenance/v1",
+  "host": "ser9",
+  "repository": "budivoogt/dokploy",
+  "worktree": "/home/budi/dev/dokploy/ctd-5990-03010",
+  "branch": "ctd-5990-dokploy-03010",
+  "baseSha": "4d8a2a38e8a0369650d2bd37df53101c137c37ff",
+  "headSha": "d2685781bfb7f2f35a227fa7364346efcdaa73da",
+  "lastActivityAt": "2026-10-24T04:04:41.000Z",
+  "sessions": [],
+  "linearTickets": [
+    "CTD-5990"
+  ],
+  "pullRequests": [
+    {
+      "number": 9,
+      "url": "https://github.com/budivoogt/dokploy/pull/9",
+      "state": "MERGED"
+    }
+  ],
+  "reason": "pr-merged",
+  "evidence": [],
+  "droppedEvidence": [
+    {
+      "worktree": "/home/budi/dev/wyswyg-editor/worktrees/security-release-age",
+      "path": "dist/",
+      "reason": "superseded-ignored-output",
+      "count": 1
+    },
+    {
+      "path": ".cache/agentctl/claude-wakes.jsonl",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/check-lock-consistency.py",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/final-report.md",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/owner-checkpoint.md",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/pinning-scope-request.md",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/pr-body.md",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/security-attestation.json",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/security-review.json",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/shadcn-times.json",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/tailwind-times.json",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/agentctl/claude-wakes.jsonl",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/daybreak-delta-attestation.json",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/daybreak-final-attestation.json",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/pm-decision.md",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/pm-final.md",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/pm-pnpm.md",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/pm-result.md",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/pnpm-reply.md",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/pr-body.md",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/prepush/hook-outcomes.jsonl",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "worktree": "/home/budi/.paseo/worktrees/3nsvwjkw/ci-pin-pgvector-digest",
+      "path": ".svelte-kit/",
+      "reason": "superseded-ignored-output",
+      "count": 306
+    },
+    {
+      "worktree": "/home/budi/.paseo/worktrees/3nsvwjkw/ci-pin-pgvector-digest",
+      "path": "node_modules/",
+      "reason": "superseded-ignored-output",
+      "count": 112172
+    },
+    {
+      "path": ".cache/1348-finding.json",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/1348-monitor-timeout.txt",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/1348-needs-go.txt",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/1348-pr-body.md",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/1348-pr-open.txt",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/1348-ready.txt",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/1348-security-delta.json",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/1348-security-delta.txt",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/1348-security.json",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/1348-security.txt",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "path": ".cache/1348-start.txt",
+      "reason": "superseded-ignored-output"
+    },
+    {
+      "worktree": "/home/budi/.paseo/worktrees/1x6nqrsg/ctd-6662-pricing-plans-schema",
+      "path": ".svelte-kit/",
+      "reason": "superseded-ignored-output",
+      "count": 922
+    },
+    {
+      "worktree": "/home/budi/.paseo/worktrees/1x6nqrsg/ctd-6662-pricing-plans-schema",
+      "path": ".velite/",
+      "reason": "superseded-ignored-output",
+      "count": 7
+    },
+    {
+      "worktree": "/home/budi/.paseo/worktrees/1x6nqrsg/ctd-6662-pricing-plans-schema",
+      "path": "src/",
+      "reason": "superseded-ignored-output",
+      "count": 11244
+    },
+    {
+      "worktree": "/home/budi/dev/dokploy/direct-dependency-pins-20261101",
+      "path": "node_modules/",
+      "reason": "superseded-ignored-output",
+      "count": 7
+    },
+    {
+      "worktree": "/home/budi/dev/dokploy/ctd-5990-03010",
+      "path": "dist/",
+      "reason": "regenerable-ignored-output",
+      "count": 16
+    }
+  ]
+}
